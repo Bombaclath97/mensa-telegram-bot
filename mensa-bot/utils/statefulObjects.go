@@ -1,5 +1,7 @@
 package utils
 
+import "git.bombaclath.cc/bombaclath97/mensa-bot-telegram/bot/model"
+
 type RequestsToApprove map[int64][]int64
 
 func (r *RequestsToApprove) AddRequest(userID, chatID int64) {
@@ -37,9 +39,10 @@ func (c *ConversationStateSaver) GetState(userID int64) int {
 }
 
 type intermediateUser struct {
-	firstName string
-	lastName  string
-	email     string
+	firstName        string
+	lastName         string
+	email            string
+	confirmationCode string
 }
 
 type IntermediateUserSaver map[int64]intermediateUser
@@ -71,6 +74,15 @@ func (i *IntermediateUserSaver) SetEmail(userID int64, email string) {
 	(*i)[userID] = user
 }
 
+func (i *IntermediateUserSaver) SetConfirmationCode(userID int64, code string) {
+	user, exists := (*i)[userID]
+	if !exists {
+		user = intermediateUser{}
+	}
+	user.confirmationCode = code
+	(*i)[userID] = user
+}
+
 func (i *IntermediateUserSaver) GetFirstName(userID int64) string {
 	user, exists := (*i)[userID]
 	if !exists {
@@ -95,7 +107,20 @@ func (i *IntermediateUserSaver) GetEmail(userID int64) string {
 	return user.email
 }
 
-func (i *IntermediateUserSaver) GetUser(userID int64) (intermediateUser, bool) {
+func (i *IntermediateUserSaver) GetConfirmationCode(userID int64) string {
 	user, exists := (*i)[userID]
-	return user, exists
+	if !exists {
+		return ""
+	}
+	return user.confirmationCode
+}
+
+func (i *IntermediateUserSaver) GetUser(userID int64) model.User {
+	user, _ := (*i)[userID]
+	return model.User{
+		TelegramID: userID,
+		FirstName:  user.firstName,
+		LastName:   user.lastName,
+		MensaEmail: user.email,
+	}
 }

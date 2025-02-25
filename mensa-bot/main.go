@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/joho/godotenv"
+
 	"git.bombaclath.cc/bombaclath97/mensa-bot-telegram/bot/utils"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -16,6 +18,7 @@ var conversationStateSaver = utils.ConversationStateSaver{}
 var intermediateUserSaver = utils.IntermediateUserSaver{}
 
 func main() {
+	godotenv.Load()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 

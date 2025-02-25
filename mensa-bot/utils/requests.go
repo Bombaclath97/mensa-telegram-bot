@@ -1,10 +1,14 @@
 package utils
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+
+	"git.bombaclath.cc/bombaclath97/mensa-bot-telegram/bot/model"
 )
 
 func IsMemberRegistered(userID int64) bool {
@@ -37,4 +41,24 @@ func GetMember(userID int64) ([]byte, error) {
 	}
 
 	return body, nil
+}
+
+func RegisterMember(userID int64, firstName, lastName, email string) int {
+	member := model.User{
+		TelegramID: userID,
+		FirstName:  firstName,
+		LastName:   lastName,
+		MensaEmail: email,
+	}
+
+	reqBody, _ := json.Marshal(member)
+
+	resp, err := http.Post("http://localhost:8080/members", "application/json", io.NopCloser(bytes.NewReader(reqBody)))
+	if err != nil {
+		return http.StatusInternalServerError
+	}
+
+	defer resp.Body.Close()
+
+	return resp.StatusCode
 }
