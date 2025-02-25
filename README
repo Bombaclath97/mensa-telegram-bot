@@ -9,11 +9,6 @@ Mensa Bot Telegram è un bot per Telegram che permette agli utenti di registrars
 - Invito agli utenti non registrati a creare un profilo
 - Memorizzazione temporanea delle informazioni degli utenti durante la registrazione
 
-## Requisiti
-
-- Go 1.16 o superiore
-- Un database SQLite
-
 ## Installazione
 
 1. Clona il repository:
