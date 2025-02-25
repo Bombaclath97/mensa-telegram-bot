@@ -81,14 +81,30 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 				Text:   fmt.Sprintf(model.ASK_EMAIL_MESSAGE, intermediateUserSaver.GetFirstName(update.Message.From.ID), update.Message.Text),
 			})
 		case utils.ASKED_EMAIL:
-			intermediateUserSaver.SetEmail(update.Message.From.ID, update.Message.Text)
-			conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_CONFIRMATION_CODE)
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: update.Message.From.ID,
-				Text:   model.ASK_CONFIRMATION_CODE_MESSAGE,
-			})
+			email := update.Message.Text
+			if !utils.IsValidEmail(email) {
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID: update.Message.From.ID,
+					Text:   model.INVALID_EMAIL_MESSAGE,
+				})
+			} else {
+				intermediateUserSaver.SetEmail(update.Message.From.ID, update.Message.Text)
+				conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_CONFIRMATION_CODE)
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID: update.Message.From.ID,
+					Text:   fmt.Sprintf(model.ASK_CONFIRMATION_CODE_MESSAGE, email),
+				})
+				confCode := utils.GenerateConfirmationCode()
+				intermediateUserSaver.SetConfirmationCode(update.Message.From.ID, confCode)
+				utils.SendConfirmationEmail(email, intermediateUserSaver.GetFirstName(update.Message.From.ID), confCode)
+			}
 		case utils.ASKED_CONFIRMATION_CODE:
-			panic("Not implemented")
+			if update.Message.Text == intermediateUserSaver.GetConfirmationCode(update.Message.From.ID) {
+				finalUser := intermediateUserSaver.GetUser(update.Message.From.ID)
+				utils.RegisterMember(update.Message.From.ID, finalUser.FirstName, finalUser.LastName, finalUser.MensaEmail)
+			} else {
+				panic("not implemented") // TODO: handle this case
+			}
 		default:
 			// NO OP
 		}
