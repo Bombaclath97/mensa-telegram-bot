@@ -62,3 +62,25 @@ func RegisterMember(userID int64, firstName, lastName, email string) int {
 
 	return resp.StatusCode
 }
+
+func LookupEmail(email string) (model.Users, int, error) {
+	emailNoDomain := email[:len(email)-len("@mensa.it")]
+	resp, err := http.Get("http://localhost:8080/members/email/" + emailNoDomain)
+	if err != nil {
+		return model.Users{}, http.StatusInternalServerError, err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return model.Users{}, resp.StatusCode, nil
+	}
+
+	var users model.Users
+	err = json.NewDecoder(resp.Body).Decode(&users)
+	if err != nil {
+		return model.Users{}, http.StatusInternalServerError, err
+	}
+
+	return users, http.StatusOK, nil
+}

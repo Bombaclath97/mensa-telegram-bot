@@ -18,7 +18,7 @@ func GenerateConfirmationCode() string {
 	code := ""
 
 	for range 6 {
-		code += fmt.Sprint(r.Intn(10) + 48)
+		code += fmt.Sprint(r.Intn(10))
 	}
 
 	return code

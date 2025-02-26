@@ -26,14 +26,14 @@ func main() {
 		bot.WithDefaultHandler(onMessage),
 	}
 
-	b, err := bot.New("", opts...)
+	b, err := bot.New(os.Getenv("BOT_TOKEN"), opts...)
 	if err != nil {
 		log.Fatalf("failed to create bot: %v", err)
 	}
 
 	b.RegisterHandlerMatchFunc(matchJoinRequest, onChatJoinRequest)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, startHandler)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/profile", bot.MatchTypeExact, profileHandler)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/profilo", bot.MatchTypeExact, profileHandler)
 
 	b.Start(ctx)
 }
