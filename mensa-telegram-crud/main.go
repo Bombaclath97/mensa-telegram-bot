@@ -18,6 +18,10 @@ type User struct {
 	LastName          string  `json:"lastName"`
 }
 
+type Users struct {
+	Users []User `json:"users"`
+}
+
 func initDB() {
 	var err error
 	db, err = sql.Open("sqlite3", "./mensa-telegram.db")
@@ -37,6 +41,8 @@ func initDB() {
 	_, err = db.Exec(stmt)
 	if err != nil {
 		log.Fatal(err)
+	} else {
+		log.Println("Database initialized")
 	}
 }
 
@@ -49,6 +55,8 @@ func main() {
 	r.POST("/members", createMember)
 	r.PUT("/members/:id", updateMember)
 	r.DELETE("/members/:id", deleteMember)
+
+	r.GET("/members/email/:email", getMemberByEmail)
 
 	r.Run()
 }
@@ -109,4 +117,27 @@ func deleteMember(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"message": "User deleted"})
+}
+
+func getMemberByEmail(c *gin.Context) {
+	var users Users
+	email := c.Param("email")
+	rows, err := db.Query("SELECT * FROM users WHERE mensa_email LIKE ?", email)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "User not found"})
+		return
+	}
+
+	for rows.Next() {
+		var user User
+		err = rows.Scan(&user.TelegramID, &user.MensaEmail, &user.MembershipEndDate, &user.FirstName, &user.LastName)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		} else {
+			users.Users = append(users.Users, user)
+		}
+	}
+
+	c.JSON(200, users)
 }

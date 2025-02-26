@@ -38,6 +38,10 @@ func (c *ConversationStateSaver) GetState(userID int64) int {
 	return state
 }
 
+func (c *ConversationStateSaver) RemoveState(userID int64) {
+	delete(*c, userID)
+}
+
 type intermediateUser struct {
 	firstName        string
 	lastName         string
@@ -115,8 +119,9 @@ func (i *IntermediateUserSaver) GetConfirmationCode(userID int64) string {
 	return user.confirmationCode
 }
 
-func (i *IntermediateUserSaver) GetUser(userID int64) model.User {
+func (i *IntermediateUserSaver) GetCompleteUserAndCleanup(userID int64) model.User {
 	user, _ := (*i)[userID]
+	delete(*i, userID)
 	return model.User{
 		TelegramID: userID,
 		FirstName:  user.firstName,
