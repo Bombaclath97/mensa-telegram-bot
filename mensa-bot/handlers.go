@@ -65,6 +65,11 @@ func onChatJoinRequest(ctx context.Context, b *bot.Bot, update *models.Update) {
 			Text:      fmt.Sprintf(model.INVITE_TO_JOIN_MESSAGE, firstName),
 		})
 		requestsToApprove.AddRequest(userId, chatId)
+	} else {
+		b.ApproveChatJoinRequest(ctx, &bot.ApproveChatJoinRequestParams{
+			ChatID: chatId,
+			UserID: userId,
+		})
 	}
 }
 
@@ -141,6 +146,43 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 					})
 				}
 			}
+		}
+	}
+}
+
+func approveHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if !utils.IsMemberRegistered(update.Message.From.ID) {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ParseMode: "Markdown",
+			ChatID:    update.Message.From.ID,
+			Text:      model.NOT_REGISTERED_MESSAGE,
+		})
+	} else {
+		requestsToJoin, ok := requestsToApprove.GetRequests(update.Message.From.ID)
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ParseMode: "Markdown",
+			ChatID:    update.Message.From.ID,
+			Text:      "Approving requests..." + fmt.Sprint(requestsToJoin),
+		})
+		if !ok {
+			b.SendMessage(ctx, &bot.SendMessageParams{
+				ParseMode: "Markdown",
+				ChatID:    update.Message.From.ID,
+				Text:      model.NO_REQUESTS_TO_APPROVE,
+			})
+		} else {
+			for _, chatId := range requestsToJoin {
+				b.ApproveChatJoinRequest(ctx, &bot.ApproveChatJoinRequestParams{
+					ChatID: chatId,
+					UserID: update.Message.From.ID,
+				})
+			}
+			requestsToApprove.RemoveRequests(update.Message.From.ID)
+			b.SendMessage(ctx, &bot.SendMessageParams{
+				ParseMode: "Markdown",
+				ChatID:    update.Message.From.ID,
+				Text:      model.REQUESTS_APPROVED_MESSAGE,
+			})
 		}
 	}
 }

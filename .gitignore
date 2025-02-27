@@ -174,3 +174,5 @@ dist
 
 # SvelteKit build / generate output
 .svelte-kit
+
+git-crypt-key

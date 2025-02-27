@@ -34,6 +34,7 @@ func main() {
 	b.RegisterHandlerMatchFunc(matchJoinRequest, onChatJoinRequest)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, startHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/profilo", bot.MatchTypeExact, profileHandler)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/approve", bot.MatchTypeExact, approveHandler)
 
 	b.Start(ctx)
 }
