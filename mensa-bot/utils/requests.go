@@ -77,6 +77,11 @@ func LookupEmail(email string) (model.Users, int, error) {
 	}
 
 	var users model.Users
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return model.Users{}, http.StatusInternalServerError, err
+	}
+	log.Println(string(body))
 	err = json.NewDecoder(resp.Body).Decode(&users)
 	if err != nil {
 		return model.Users{}, http.StatusInternalServerError, err

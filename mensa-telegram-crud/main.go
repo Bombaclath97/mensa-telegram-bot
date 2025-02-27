@@ -122,7 +122,7 @@ func deleteMember(c *gin.Context) {
 func getMemberByEmail(c *gin.Context) {
 	var users Users
 	email := c.Param("email")
-	rows, err := db.Query("SELECT * FROM users WHERE mensa_email LIKE ?", email)
+	rows, err := db.Query("SELECT * FROM users WHERE mensa_email LIKE ?", email+"%")
 	if err != nil {
 		c.JSON(404, gin.H{"error": "User not found"})
 		return
@@ -130,6 +130,7 @@ func getMemberByEmail(c *gin.Context) {
 
 	for rows.Next() {
 		var user User
+		log.Println(rows)
 		err = rows.Scan(&user.TelegramID, &user.MensaEmail, &user.MembershipEndDate, &user.FirstName, &user.LastName)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
@@ -139,5 +140,6 @@ func getMemberByEmail(c *gin.Context) {
 		}
 	}
 
+	log.Println("found users:", users)
 	c.JSON(200, users)
 }
