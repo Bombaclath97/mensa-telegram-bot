@@ -109,14 +109,7 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 						ChatID:    update.Message.From.ID,
 						Text:      model.INVALID_EMAIL_MESSAGE,
 					})
-				} else if users, code, err := utils.LookupEmail(email); err == nil && code == 200 && len(users.Users) > 0 {
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      fmt.Sprintf(model.EMAIL_ALREADY_REGISTERED_MESSAGE, users.Users[0].FirstName, users.Users[0].LastName),
-					})
-					conversationStateSaver.RemoveState(update.Message.From.ID)
-				} else {
+				} else if code, err := utils.LookupEmail(email); err == nil && code == 200 {
 					intermediateUserSaver.SetEmail(update.Message.From.ID, update.Message.Text)
 					conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_CONFIRMATION_CODE)
 					b.SendMessage(ctx, &bot.SendMessageParams{
@@ -127,6 +120,13 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 					confCode := utils.GenerateConfirmationCode()
 					intermediateUserSaver.SetConfirmationCode(update.Message.From.ID, confCode)
 					utils.SendConfirmationEmail(email, intermediateUserSaver.GetFirstName(update.Message.From.ID), confCode)
+				} else {
+					b.SendMessage(ctx, &bot.SendMessageParams{
+						ParseMode: "Markdown",
+						ChatID:    update.Message.From.ID,
+						Text:      fmt.Sprintf(model.EMAIL_ALREADY_REGISTERED_OR_NOT_EXISTENT),
+					})
+					conversationStateSaver.RemoveState(update.Message.From.ID)
 				}
 			case utils.ASKED_CONFIRMATION_CODE:
 				if strings.TrimSpace(update.Message.Text) == intermediateUserSaver.GetConfirmationCode(update.Message.From.ID) {

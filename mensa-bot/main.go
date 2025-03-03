@@ -34,7 +34,16 @@ func main() {
 	b.RegisterHandlerMatchFunc(matchJoinRequest, onChatJoinRequest)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, startHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/profilo", bot.MatchTypeExact, profileHandler)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/approve", bot.MatchTypeExact, approveHandler)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/approva", bot.MatchTypeExact, approveHandler)
+
+	b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
+		Commands: []models.BotCommand{
+			{Command: "start", Description: "Inizia la conversazione con il bot"},
+			{Command: "profilo", Description: "Crea o visualizza il tuo profilo"},
+			{Command: "approva", Description: "Richiedi l'approvazione delle richieste in sospeso"},
+		},
+		Scope: &models.BotCommandScopeAllPrivateChats{},
+	})
 
 	b.Start(ctx)
 }
