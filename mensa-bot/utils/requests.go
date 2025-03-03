@@ -69,5 +69,10 @@ func LookupEmail(email string) (int, error) {
 	api_endpoint := os.Getenv("MENSA_APP_API_URL") + "/members?email=" + url.QueryEscape(email)
 	resp, err := http.Get(api_endpoint)
 
+	if err != nil {
+		log.Fatalln(err)
+		return http.StatusInternalServerError, err
+	}
+
 	return resp.StatusCode, err
 }
