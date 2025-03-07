@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"git.bombaclath.cc/bombaclath97/mensa-bot-telegram/bot/model"
@@ -32,7 +33,7 @@ func startHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 func profileHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userId := update.Message.From.ID
 	if !utils.IsMemberRegistered(userId) {
-		conversationStateSaver.SetState(userId, utils.ASKED_NAME)
+		conversationStateSaver.SetState(userId, utils.ASKED_EMAIL)
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ParseMode: "Markdown",
 			ChatID:    userId,
@@ -84,7 +85,65 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 				Text:      model.CANCEL_REGISTRATION_MESSAGE,
 			})
 		} else {
+			// Conversation state machine already started
 			switch state {
+			// User has just used the /profile command, waiting for email
+			case utils.ASKED_EMAIL:
+				if strings.Contains(update.Message.Text, "@mensa.it") {
+					if exist, _ := utils.EmailExistsInDatabase(update.Message.Text); !exist {
+						intermediateUserSaver.SetEmail(update.Message.From.ID, update.Message.Text)
+						conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_MEMBER_NUMBER)
+						b.SendMessage(ctx, &bot.SendMessageParams{
+							ParseMode: "Markdown",
+							ChatID:    update.Message.From.ID,
+							Text:      model.ASK_MEMBER_NUMBER_MESSAGE,
+						})
+					} else {
+						b.SendMessage(ctx, &bot.SendMessageParams{
+							ParseMode: "Markdown",
+							ChatID:    update.Message.From.ID,
+							Text:      model.EMAIL_NOT_VALID_MESSAGE,
+						})
+					}
+				} else {
+					b.SendMessage(ctx, &bot.SendMessageParams{
+						ParseMode: "Markdown",
+						ChatID:    update.Message.From.ID,
+						Text:      model.EMAIL_ALREADY_REGISTERED,
+					})
+				}
+			// User has inserted email, waiting for member number
+			case utils.ASKED_MEMBER_NUMBER:
+				memberNumber, err := strconv.Atoi(update.Message.Text)
+
+				// If the message is a number
+				if err == nil {
+					// If an association exists in the App
+					if utils.IsMember(intermediateUserSaver.GetEmail(update.Message.From.ID), update.Message.Text) {
+						intermediateUserSaver.SetMemberNumber(update.Message.From.ID, int64(memberNumber))
+						conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_NAME)
+						b.SendMessage(ctx, &bot.SendMessageParams{
+							ParseMode: "Markdown",
+							ChatID:    update.Message.From.ID,
+							Text:      fmt.Sprintf(model.ASK_NAME_MESSAGE),
+						})
+					} else { // Associazione inesistente, ricomincia da capo
+						b.SendMessage(ctx, &bot.SendMessageParams{
+							ParseMode: "Markdown",
+							ChatID:    update.Message.From.ID,
+							Text:      fmt.Sprintf(model.NON_EXISTENT_ASSOCIATION_MESSAGE, intermediateUserSaver.GetEmail(update.Message.From.ID), memberNumber),
+						})
+						intermediateUserSaver.RemoveUser(update.Message.From.ID)
+						conversationStateSaver.RemoveState(update.Message.From.ID)
+					}
+				} else { // The message is not a number
+					b.SendMessage(ctx, &bot.SendMessageParams{
+						ParseMode: "Markdown",
+						ChatID:    update.Message.From.ID,
+						Text:      model.MEMBER_NUMBER_IS_NOT_VALID_MESSAGE,
+					})
+				}
+			// User has inserted name, waiting for surname
 			case utils.ASKED_NAME:
 				intermediateUserSaver.SetFirstName(update.Message.From.ID, update.Message.Text)
 				conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_SURNAME)
@@ -93,46 +152,28 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 					ChatID:    update.Message.From.ID,
 					Text:      fmt.Sprintf(model.ASK_SURNAME_MESSAGE, update.Message.Text),
 				})
+			// User has inserted surname, generate confirmation code and send email, then ask for confirmation code
 			case utils.ASKED_SURNAME:
 				intermediateUserSaver.SetLastName(update.Message.From.ID, update.Message.Text)
-				conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_EMAIL)
+				conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_CONFIRMATION_CODE)
+
+				confirmationCode := utils.GenerateConfirmationCode()
+				intermediateUserSaver.SetConfirmationCode(update.Message.From.ID, confirmationCode)
+
+				utils.SendConfirmationEmail(intermediateUserSaver.GetEmail(update.Message.From.ID), intermediateUserSaver.GetFirstName(update.Message.From.ID), confirmationCode)
 				b.SendMessage(ctx, &bot.SendMessageParams{
 					ParseMode: "Markdown",
 					ChatID:    update.Message.From.ID,
-					Text:      fmt.Sprintf(model.ASK_EMAIL_MESSAGE, intermediateUserSaver.GetFirstName(update.Message.From.ID), update.Message.Text),
+					Text:      fmt.Sprintf(model.ASK_CONFIRMATION_CODE_MESSAGE, intermediateUserSaver.GetEmail(update.Message.From.ID)),
 				})
-			case utils.ASKED_EMAIL:
-				email := update.Message.Text
-				if !utils.IsValidEmail(email) {
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      model.INVALID_EMAIL_MESSAGE,
-					})
-				} else if code, err := utils.LookupEmail(email); err == nil && code == 200 {
-					intermediateUserSaver.SetEmail(update.Message.From.ID, update.Message.Text)
-					conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_CONFIRMATION_CODE)
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      fmt.Sprintf(model.ASK_CONFIRMATION_CODE_MESSAGE, email),
-					})
-					confCode := utils.GenerateConfirmationCode()
-					intermediateUserSaver.SetConfirmationCode(update.Message.From.ID, confCode)
-					utils.SendConfirmationEmail(email, intermediateUserSaver.GetFirstName(update.Message.From.ID), confCode)
-				} else {
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      fmt.Sprintf(model.EMAIL_ALREADY_REGISTERED_OR_NOT_EXISTENT),
-					})
-					conversationStateSaver.RemoveState(update.Message.From.ID)
-				}
+			// User has inserted confirmation code, check if it's correct
 			case utils.ASKED_CONFIRMATION_CODE:
-				if strings.TrimSpace(update.Message.Text) == intermediateUserSaver.GetConfirmationCode(update.Message.From.ID) {
-					finalUser := intermediateUserSaver.GetCompleteUserAndCleanup(update.Message.From.ID)
-					utils.RegisterMember(update.Message.From.ID, finalUser.FirstName, finalUser.LastName, finalUser.MensaEmail)
+				if update.Message.Text == intermediateUserSaver.GetConfirmationCode(update.Message.From.ID) {
+					user := intermediateUserSaver.GetCompleteUserAndCleanup(update.Message.From.ID)
+					utils.RegisterMember(update.Message.From.ID, user)
+
 					conversationStateSaver.RemoveState(update.Message.From.ID)
+					intermediateUserSaver.RemoveUser(update.Message.From.ID)
 					b.SendMessage(ctx, &bot.SendMessageParams{
 						ParseMode: "Markdown",
 						ChatID:    update.Message.From.ID,
@@ -185,4 +226,12 @@ func approveHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 			})
 		}
 	}
+}
+
+func appHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ParseMode: "Markdown",
+		ChatID:    update.Message.From.ID,
+		Text:      model.APP_DOWNLOAD_MESSAGE,
+	})
 }

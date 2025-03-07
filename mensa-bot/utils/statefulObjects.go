@@ -17,10 +17,12 @@ func (r *RequestsToApprove) GetRequests(userID int64) ([]int64, bool) {
 	return chatID, ok
 }
 
+// Ordine: MAIL MENSA, NUMERO DI TESSERA -> CERCA SE ESISTE -> CHIEDI NOME E COGNOME -> MANDA MAIL CON CODICE -> SE OK TUTTO SALVA SALVA
 const (
-	ASKED_NAME = iota
+	ASKED_EMAIL = iota
+	ASKED_MEMBER_NUMBER
+	ASKED_NAME
 	ASKED_SURNAME
-	ASKED_EMAIL
 	ASKED_CONFIRMATION_CODE
 )
 
@@ -47,9 +49,19 @@ type intermediateUser struct {
 	lastName         string
 	email            string
 	confirmationCode string
+	memberNumber     int64
 }
 
 type IntermediateUserSaver map[int64]intermediateUser
+
+func (i *IntermediateUserSaver) SetMemberNumber(userID int64, memberNumber int64) {
+	user, exists := (*i)[userID]
+	if !exists {
+		user = intermediateUser{}
+	}
+	user.memberNumber = memberNumber
+	(*i)[userID] = user
+}
 
 func (i *IntermediateUserSaver) SetFirstName(userID int64, firstName string) {
 	user, exists := (*i)[userID]
@@ -119,13 +131,26 @@ func (i *IntermediateUserSaver) GetConfirmationCode(userID int64) string {
 	return user.confirmationCode
 }
 
-func (i *IntermediateUserSaver) GetCompleteUserAndCleanup(userID int64) model.User {
-	user, _ := (*i)[userID]
+func (i *IntermediateUserSaver) GetMemberNumber(userID int64) int64 {
+	user, exists := (*i)[userID]
+	if !exists {
+		return -1
+	}
+	return user.memberNumber
+}
+
+func (i *IntermediateUserSaver) RemoveUser(userID int64) {
 	delete(*i, userID)
+}
+
+func (i *IntermediateUserSaver) GetCompleteUserAndCleanup(userID int64) model.User {
+	i.RemoveUser(userID)
+	user := (*i)[userID]
 	return model.User{
-		TelegramID: userID,
-		FirstName:  user.firstName,
-		LastName:   user.lastName,
-		MensaEmail: user.email,
+		TelegramID:   userID,
+		FirstName:    user.firstName,
+		LastName:     user.lastName,
+		MensaEmail:   user.email,
+		MemberNumber: user.memberNumber,
 	}
 }

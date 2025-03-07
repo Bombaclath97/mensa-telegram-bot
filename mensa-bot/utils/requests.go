@@ -45,15 +45,8 @@ func GetMember(userID int64) ([]byte, error) {
 	return body, nil
 }
 
-func RegisterMember(userID int64, firstName, lastName, email string) int {
-	member := model.User{
-		TelegramID: userID,
-		FirstName:  firstName,
-		LastName:   lastName,
-		MensaEmail: email,
-	}
-
-	reqBody, _ := json.Marshal(member)
+func RegisterMember(userID int64, user model.User) int {
+	reqBody, _ := json.Marshal(user)
 
 	resp, err := http.Post("http://localhost:8080/members", "application/json", io.NopCloser(bytes.NewReader(reqBody)))
 	if err != nil {
@@ -65,14 +58,28 @@ func RegisterMember(userID int64, firstName, lastName, email string) int {
 	return resp.StatusCode
 }
 
-func LookupEmail(email string) (int, error) {
-	api_endpoint := os.Getenv("MENSA_APP_API_URL") + "/members?email=" + url.QueryEscape(email)
-	resp, err := http.Get(api_endpoint)
+func EmailExistsInDatabase(email string) (bool, error) {
 
+	resp, err := http.Get("http://localhost:8080/members/email/" + url.QueryEscape(email))
 	if err != nil {
 		log.Fatalln(err)
-		return http.StatusInternalServerError, err
 	}
 
-	return resp.StatusCode, err
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK, nil
+}
+
+func IsMember(email, membership string) bool {
+	resp, err := http.Post(os.Getenv("API_ENDPOINT"), "application/x-www-form-urlencoded", bytes.NewBufferString(url.Values{
+		"email":      {email},
+		"membership": {membership},
+	}.Encode()))
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK
 }
