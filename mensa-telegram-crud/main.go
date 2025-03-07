@@ -16,10 +16,7 @@ type User struct {
 	MembershipEndDate *string `json:"membershipEndDate,omitempty"`
 	FirstName         string  `json:"firstName"`
 	LastName          string  `json:"lastName"`
-}
-
-type Users struct {
-	Users []User `json:"users"`
+	MemberNumber      int64   `json:"memberNumber"`
 }
 
 func initDB() {
@@ -36,6 +33,7 @@ func initDB() {
 		membership_end_date DATE,
 		first_name TEXT NOT NULL,
 		last_name TEXT NOT NULL
+		member_number INTEGER NOT NULL
 	);`
 
 	_, err = db.Exec(stmt)
@@ -64,7 +62,7 @@ func main() {
 func getMember(c *gin.Context) {
 	var user User
 	id := c.Param("id")
-	err := db.QueryRow("SELECT * FROM users WHERE telegram_id=?", id).Scan(&user.TelegramID, &user.MensaEmail, &user.MembershipEndDate, &user.FirstName, &user.LastName)
+	err := db.QueryRow("SELECT * FROM users WHERE telegram_id=?", id).Scan(&user.TelegramID, &user.MensaEmail, &user.MembershipEndDate, &user.FirstName, &user.LastName, &user.MemberNumber)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "User not found"})
 		return
@@ -82,7 +80,7 @@ func createMember(c *gin.Context) {
 
 	log.Println("received user:", user)
 
-	_, err := db.Exec("INSERT INTO users (telegram_id, mensa_email, membership_end_date, first_name, last_name) VALUES (?, ?, ?, ?, ?)", user.TelegramID, user.MensaEmail, user.MembershipEndDate, user.FirstName, user.LastName)
+	_, err := db.Exec("INSERT INTO users (telegram_id, mensa_email, membership_end_date, first_name, last_name, member_number) VALUES (?, ?, ?, ?, ?, ?)", user.TelegramID, user.MensaEmail, user.MembershipEndDate, user.FirstName, user.LastName, user.MemberNumber)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -99,7 +97,7 @@ func updateMember(c *gin.Context) {
 		return
 	}
 
-	_, err := db.Exec("UPDATE users SET mensa_email=?, membership_end_date=?, first_name=?, last_name=? WHERE telegram_id=?", user.MensaEmail, user.MembershipEndDate, user.FirstName, user.LastName, id)
+	_, err := db.Exec("UPDATE users SET mensa_email=?, membership_end_date=?, first_name=?, last_name=?, member_number=? WHERE telegram_id=?", user.MensaEmail, user.MembershipEndDate, user.FirstName, user.LastName, user.MemberNumber, id)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -120,7 +118,7 @@ func deleteMember(c *gin.Context) {
 }
 
 func getMemberByEmail(c *gin.Context) {
-	var users Users
+	var users []User
 	email := c.Param("email")
 	rows, err := db.Query("SELECT * FROM users WHERE mensa_email LIKE ?", email+"%")
 	if err != nil {
@@ -136,7 +134,7 @@ func getMemberByEmail(c *gin.Context) {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		} else {
-			users.Users = append(users.Users, user)
+			users = append(users, user)
 		}
 	}
 

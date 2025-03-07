@@ -6,7 +6,5 @@ type User struct {
 	MembershipEndDate *string `json:"membershipEndDate,omitempty"`
 	FirstName         string  `json:"firstName"`
 	LastName          string  `json:"lastName"`
-}
-type Users struct {
-	Users []User `json:"users"`
+	MemberNumber      int64   `json:"memberNumber"`
 }
