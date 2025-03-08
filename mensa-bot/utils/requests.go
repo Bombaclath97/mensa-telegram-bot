@@ -71,10 +71,19 @@ func EmailExistsInDatabase(email string) (bool, error) {
 }
 
 func IsMember(email, membership string) bool {
-	resp, err := http.Post(os.Getenv("API_ENDPOINT"), "application/x-www-form-urlencoded", bytes.NewBufferString(url.Values{
+	req, err := http.NewRequest("POST", os.Getenv("API_ENDPOINT"), bytes.NewBufferString(url.Values{
 		"email":      {email},
 		"membership": {membership},
 	}.Encode()))
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("API_BEARER_TOKEN")))
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalln(err)
 	}
