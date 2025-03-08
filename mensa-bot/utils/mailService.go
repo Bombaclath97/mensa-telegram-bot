@@ -9,7 +9,7 @@ import (
 )
 
 func SendConfirmationEmail(email, firstName, confCode string) {
-	username := "e.bombardelli97@gmail.com"
+	username := os.Getenv("GMAIL_USERNAME")
 	password := os.Getenv("GMAIL_PASSWORD")
 	client, err := mail.NewClient("smtp.gmail.com", mail.WithTLSPortPolicy(mail.TLSMandatory),
 		mail.WithSMTPAuth(mail.SMTPAuthPlain), mail.WithUsername(username), mail.WithPassword(password))
