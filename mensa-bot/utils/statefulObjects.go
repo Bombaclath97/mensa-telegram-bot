@@ -1,6 +1,6 @@
 package utils
 
-import "git.bombaclath.cc/bombaclath97/mensa-bot-telegram/bot/model"
+import "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/model"
 
 type RequestsToApprove map[int64][]int64
 

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"git.bombaclath.cc/bombaclath97/mensa-bot-telegram/bot/model"
-	"git.bombaclath.cc/bombaclath97/mensa-bot-telegram/bot/utils"
+	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/model"
+	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/utils"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -102,14 +102,14 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 						b.SendMessage(ctx, &bot.SendMessageParams{
 							ParseMode: "Markdown",
 							ChatID:    update.Message.From.ID,
-							Text:      model.EMAIL_NOT_VALID_MESSAGE,
+							Text:      model.EMAIL_ALREADY_REGISTERED,
 						})
 					}
 				} else {
 					b.SendMessage(ctx, &bot.SendMessageParams{
 						ParseMode: "Markdown",
 						ChatID:    update.Message.From.ID,
-						Text:      model.EMAIL_ALREADY_REGISTERED,
+						Text:      model.EMAIL_NOT_VALID_MESSAGE,
 					})
 				}
 			// User has inserted email, waiting for member number

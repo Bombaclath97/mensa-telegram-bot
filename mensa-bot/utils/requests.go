@@ -10,11 +10,13 @@ import (
 	"net/url"
 	"os"
 
-	"git.bombaclath.cc/bombaclath97/mensa-bot-telegram/bot/model"
+	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/model"
 )
 
+var crudEndpoint = os.Getenv("CRUD_ENDPOINT")
+
 func IsMemberRegistered(userID int64) bool {
-	resp, err := http.Get("http://localhost:8080/members/" + fmt.Sprint(userID))
+	resp, err := http.Get("http://" + crudEndpoint + "/members/" + fmt.Sprint(userID))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -26,7 +28,7 @@ func IsMemberRegistered(userID int64) bool {
 }
 
 func GetMember(userID int64) ([]byte, error) {
-	resp, err := http.Get("http://localhost:8080/members/" + fmt.Sprint(userID))
+	resp, err := http.Get("http://" + crudEndpoint + "/members/" + fmt.Sprint(userID))
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +50,7 @@ func GetMember(userID int64) ([]byte, error) {
 func RegisterMember(userID int64, user model.User) int {
 	reqBody, _ := json.Marshal(user)
 
-	resp, err := http.Post("http://localhost:8080/members", "application/json", io.NopCloser(bytes.NewReader(reqBody)))
+	resp, err := http.Post("http://"+crudEndpoint+"/members", "application/json", io.NopCloser(bytes.NewReader(reqBody)))
 	if err != nil {
 		return http.StatusInternalServerError
 	}
@@ -60,7 +62,7 @@ func RegisterMember(userID int64, user model.User) int {
 
 func EmailExistsInDatabase(email string) (bool, error) {
 
-	resp, err := http.Get("http://localhost:8080/members/email/" + url.QueryEscape(email))
+	resp, err := http.Get("http://" + crudEndpoint + "/members/email/" + url.QueryEscape(email))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -72,8 +74,8 @@ func EmailExistsInDatabase(email string) (bool, error) {
 
 func IsMember(email, membership string) bool {
 	req, err := http.NewRequest("POST", os.Getenv("API_ENDPOINT"), bytes.NewBufferString(url.Values{
-		"email":      {email},
-		"membership": {membership},
+		"email":     {email},
+		"member_id": {membership},
 	}.Encode()))
 	if err != nil {
 		log.Fatalln(err)
