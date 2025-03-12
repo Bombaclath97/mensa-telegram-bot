@@ -28,10 +28,9 @@ const (
 	ASK_MEMBER_NUMBER_MESSAGE          = "Grazie! Ora, per favore, inserisci il tuo numero di tessera."
 	MEMBER_NUMBER_IS_NOT_VALID_MESSAGE = "Perdonami, il messaggio che hai inserito non è un numero di tessera. Per favore, inserisci un numero di tessera valido."
 	NON_EXISTENT_ASSOCIATION_MESSAGE   = "Mi dispiace, ho cercato un utente con indirizzo email %s e numero di tessera %d, ma non ho trovato nessuna associazione. Per favore, controlla i dati inseriti e riprova. Puoi cominciare da capo usando il comando `/profilo`."
+	AWAIT_APPROVAL_ON_APP              = "Ho mandato una richiesta di approvazione all'app Mensa Italia. Per favore, controlla l'app e approva la richiesta."
 	ASK_NAME_MESSAGE                   = "La tua mail ed il tuo numero di tessera sono validi! Qual è il tuo nome?"
 	ASK_SURNAME_MESSAGE                = "Ottimo, %s. Me ne ricorderò!\nQual è il tuo cognome invece?"
-	ASK_CONFIRMATION_CODE_MESSAGE      = "Ho mandato un codice di conferma all'indirizzo email %s. Per favore, inseriscilo qui."
-	INVALID_CONFIRMATION_CODE_MESSAGE  = "Il codice inserito non è valido. Per favore, inserisci il codice corretto (solo le 6 cifre, non aggiungere altro)."
 	REGISTRATION_SUCCESS_MESSAGE       = "Il codice è corretto! Il tuo profilo è stato creato con successo. Utilizza il comando `/approve` per essere approvato nei gruppi in cui hai fatto richiesta."
 
 	// Sent with command /approve
