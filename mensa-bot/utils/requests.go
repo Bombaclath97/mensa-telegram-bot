@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"os"
 
-	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/model"
+	model "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models"
 )
 
 var crudEndpoint = os.Getenv("CRUD_ENDPOINT")
@@ -72,10 +72,14 @@ func EmailExistsInDatabase(email string) (bool, error) {
 	return resp.StatusCode == http.StatusOK, nil
 }
 
-func IsMember(email, membership string) bool {
+func CheckIfIsMemberAndSendCallmeURL(email, membership string) (bool, string) {
+	baseUrl := os.Getenv("CALLME_BASE_URL")
+	userToken := GenerateCallmeUrlEndpoint(membership)
+
 	req, err := http.NewRequest("POST", os.Getenv("API_ENDPOINT"), bytes.NewBufferString(url.Values{
-		"email":     {email},
-		"member_id": {membership},
+		"email":      {email},
+		"member_id":  {membership},
+		"callme_url": {fmt.Sprintf("%s/%s", baseUrl, userToken)},
 	}.Encode()))
 	if err != nil {
 		log.Fatalln(err)
@@ -92,5 +96,5 @@ func IsMember(email, membership string) bool {
 
 	defer resp.Body.Close()
 
-	return resp.StatusCode == http.StatusOK
+	return resp.StatusCode == http.StatusOK, userToken
 }

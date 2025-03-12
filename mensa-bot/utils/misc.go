@@ -13,12 +13,14 @@ func IsValidEmail(email string) bool {
 	return re.MatchString(email)
 }
 
-func GenerateConfirmationCode() string {
+func GenerateCallmeUrlEndpoint(userId string) string {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	code := ""
+	code := fmt.Sprintf("%s_", userId)
 
-	for range 6 {
-		code += fmt.Sprint(r.Intn(10))
+	charSet := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+	for range 15 {
+		code += string(charSet[r.Intn(len(charSet))])
 	}
 
 	return code

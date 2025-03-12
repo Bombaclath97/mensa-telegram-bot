@@ -5,7 +5,10 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
 	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/utils"
@@ -16,6 +19,7 @@ import (
 var requestsToApprove = utils.RequestsToApprove{}
 var conversationStateSaver = utils.ConversationStateSaver{}
 var intermediateUserSaver = utils.IntermediateUserSaver{}
+var lockedUsers = utils.LockedUsers{}
 
 func main() {
 	godotenv.Load()
@@ -48,6 +52,29 @@ func main() {
 	})
 
 	b.Start(ctx)
+
+	go func() {
+		r := gin.Default()
+		r.GET("/callme_api/:token", func(c *gin.Context) {
+			fullToken := c.Param("token")
+			userId := strings.Split(fullToken, "_")[0]
+			userIdInt, _ := strconv.ParseInt(userId, 10, 64)
+			key := strings.Split(fullToken, "_")[1]
+
+			if lockedUsers.UnlockUser(userIdInt, key) {
+				conversationStateSaver.SetState(userIdInt, utils.ASKED_NAME)
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ParseMode: "Markdown",
+					ChatID:    userIdInt,
+					Text:      "Richiesta approvata, grazie! Puoi per favore scrivermi il tuo nome ora?",
+				})
+				c.JSON(200, gin.H{"message": "Utente sbloccato"})
+			} else {
+				c.JSON(400, gin.H{"message": "Errore"})
+			}
+		})
+		r.Run()
+	}()
 }
 
 func matchJoinRequest(update *models.Update) bool {
