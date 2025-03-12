@@ -8,7 +8,7 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"git.bombaclath.cc/bombaclath97/mensa-bot-telegram/bot/utils"
+	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/utils"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )

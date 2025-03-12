@@ -1,8 +1,6 @@
-module git.bombaclath.cc/bombaclath97/mensa-telegram-bot/mensa-telegram-crud
+module git.bombaclath.cc/bombadurelli/mensa-telegram-bot/mensa-telegram-crud
 
-go 1.23.0
-
-toolchain go1.24.0
+go 1.24.0
 
 require (
 	github.com/gin-gonic/gin v1.10.0
