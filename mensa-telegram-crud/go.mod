@@ -1,4 +1,4 @@
-module git.bombaclath.cc/bombadurelli/mensa-telegram-bot/mensa-telegram-crud
+module git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-telegram-crud
 
 go 1.24.0
 
