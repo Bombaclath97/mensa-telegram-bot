@@ -1,6 +1,6 @@
 package utils
 
-import "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/model"
+import model "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models"
 
 type RequestsToApprove map[int64][]int64
 
@@ -21,6 +21,7 @@ func (r *RequestsToApprove) GetRequests(userID int64) ([]int64, bool) {
 const (
 	ASKED_EMAIL = iota
 	ASKED_MEMBER_NUMBER
+	AWAITING_APPROVAL
 	ASKED_NAME
 	ASKED_SURNAME
 	ASKED_CONFIRMATION_CODE
@@ -153,4 +154,23 @@ func (i *IntermediateUserSaver) GetCompleteUserAndCleanup(userID int64) model.Us
 		MensaEmail:   user.email,
 		MemberNumber: user.memberNumber,
 	}
+}
+
+type LockedUsers map[int64]string
+
+func (l *LockedUsers) LockUser(userID int64, key string) {
+	(*l)[userID] = key
+}
+
+func (l *LockedUsers) UnlockUser(userID int64, key string) bool {
+	if (*l)[userID] == key {
+		delete(*l, userID)
+		return true
+	}
+	return false
+}
+
+func (l *LockedUsers) IsUserLocked(userID int64) bool {
+	_, ok := (*l)[userID]
+	return ok
 }

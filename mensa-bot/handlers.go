@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/model"
 	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/utils"
+	model "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -76,7 +76,7 @@ func onChatJoinRequest(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 	state := conversationStateSaver.GetState(update.Message.From.ID)
-	if state > -1 {
+	if state > -1 && !lockedUsers.IsUserLocked(update.Message.From.ID) {
 		if update.Message.Text == "/cancel" {
 			conversationStateSaver.RemoveState(update.Message.From.ID)
 			b.SendMessage(ctx, &bot.SendMessageParams{
@@ -118,14 +118,16 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 				// If the message is a number
 				if err == nil {
-					// If an association exists in the App
-					if utils.IsMember(intermediateUserSaver.GetEmail(update.Message.From.ID), update.Message.Text) {
+					// If an association exists in the App. If it does, wait for approval on app
+					if isMember, token := utils.CheckIfIsMemberAndSendCallmeURL(intermediateUserSaver.GetEmail(update.Message.From.ID), update.Message.Text); isMember {
 						intermediateUserSaver.SetMemberNumber(update.Message.From.ID, int64(memberNumber))
-						conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_NAME)
+						conversationStateSaver.SetState(update.Message.From.ID, utils.AWAITING_APPROVAL)
+						lockedUsers.LockUser(update.Message.From.ID, token)
+
 						b.SendMessage(ctx, &bot.SendMessageParams{
 							ParseMode: "Markdown",
 							ChatID:    update.Message.From.ID,
-							Text:      fmt.Sprintf(model.ASK_NAME_MESSAGE),
+							Text:      fmt.Sprintf(model.AWAIT_APPROVAL_ON_APP),
 						})
 					} else { // Associazione inesistente, ricomincia da capo
 						b.SendMessage(ctx, &bot.SendMessageParams{
@@ -154,38 +156,16 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 				})
 			// User has inserted surname, generate confirmation code and send email, then ask for confirmation code
 			case utils.ASKED_SURNAME:
-				intermediateUserSaver.SetLastName(update.Message.From.ID, update.Message.Text)
-				conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_CONFIRMATION_CODE)
+				user := intermediateUserSaver.GetCompleteUserAndCleanup(update.Message.From.ID)
+				utils.RegisterMember(update.Message.From.ID, user)
 
-				confirmationCode := utils.GenerateConfirmationCode()
-				intermediateUserSaver.SetConfirmationCode(update.Message.From.ID, confirmationCode)
-
-				utils.SendConfirmationEmail(intermediateUserSaver.GetEmail(update.Message.From.ID), intermediateUserSaver.GetFirstName(update.Message.From.ID), confirmationCode)
+				conversationStateSaver.RemoveState(update.Message.From.ID)
+				intermediateUserSaver.RemoveUser(update.Message.From.ID)
 				b.SendMessage(ctx, &bot.SendMessageParams{
 					ParseMode: "Markdown",
 					ChatID:    update.Message.From.ID,
-					Text:      fmt.Sprintf(model.ASK_CONFIRMATION_CODE_MESSAGE, intermediateUserSaver.GetEmail(update.Message.From.ID)),
+					Text:      model.REGISTRATION_SUCCESS_MESSAGE,
 				})
-			// User has inserted confirmation code, check if it's correct
-			case utils.ASKED_CONFIRMATION_CODE:
-				if update.Message.Text == intermediateUserSaver.GetConfirmationCode(update.Message.From.ID) {
-					user := intermediateUserSaver.GetCompleteUserAndCleanup(update.Message.From.ID)
-					utils.RegisterMember(update.Message.From.ID, user)
-
-					conversationStateSaver.RemoveState(update.Message.From.ID)
-					intermediateUserSaver.RemoveUser(update.Message.From.ID)
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      model.REGISTRATION_SUCCESS_MESSAGE,
-					})
-				} else {
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      model.INVALID_CONFIRMATION_CODE_MESSAGE,
-					})
-				}
 			}
 		}
 	}

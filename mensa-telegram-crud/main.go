@@ -6,18 +6,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
+
+	model "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models"
 )
 
 var db *sql.DB
-
-type User struct {
-	TelegramID        int64   `json:"telegramId"`
-	MensaEmail        string  `json:"mensaEmail"`
-	MembershipEndDate *string `json:"membershipEndDate,omitempty"`
-	FirstName         string  `json:"firstName"`
-	LastName          string  `json:"lastName"`
-	MemberNumber      int64   `json:"memberNumber"`
-}
 
 func initDB() {
 	var err error
@@ -60,7 +53,7 @@ func main() {
 }
 
 func getMember(c *gin.Context) {
-	var user User
+	var user model.User
 	id := c.Param("id")
 	err := db.QueryRow("SELECT * FROM users WHERE telegram_id=?", id).Scan(&user.TelegramID, &user.MensaEmail, &user.MembershipEndDate, &user.FirstName, &user.LastName, &user.MemberNumber)
 	if err != nil {
@@ -72,7 +65,7 @@ func getMember(c *gin.Context) {
 }
 
 func createMember(c *gin.Context) {
-	var user User
+	var user model.User
 	if err := c.ShouldBindJSON(&user); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
@@ -90,7 +83,7 @@ func createMember(c *gin.Context) {
 }
 
 func updateMember(c *gin.Context) {
-	var user User
+	var user model.User
 	id := c.Param("id")
 	if err := c.ShouldBindJSON(&user); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
@@ -118,7 +111,7 @@ func deleteMember(c *gin.Context) {
 }
 
 func getMemberByEmail(c *gin.Context) {
-	var user User
+	var user model.User
 	email := c.Param("email")
 	err := db.QueryRow("SELECT * FROM users WHERE mensa_email=?", email).Scan(&user.TelegramID, &user.MensaEmail, &user.MembershipEndDate, &user.FirstName, &user.LastName, &user.MemberNumber)
 	if err != nil {

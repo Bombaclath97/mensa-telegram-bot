@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/model"
+	model "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models"
 	"github.com/wneessen/go-mail"
 )
 
