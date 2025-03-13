@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -15,13 +16,14 @@ func IsValidEmail(email string) bool {
 
 func GenerateCallmeUrlEndpoint(userId int64) string {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	code := fmt.Sprintf("%d_", userId)
+	code := strings.Builder{}
+	code.WriteString(fmt.Sprintf("%d_", userId))
 
 	charSet := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-	for range 15 {
-		code += string(charSet[r.Intn(len(charSet))])
+	for i := 0; i < 15; i++ {
+		code.WriteByte(charSet[r.Intn(len(charSet))])
 	}
 
-	return code
+	return code.String()
 }
