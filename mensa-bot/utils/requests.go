@@ -72,9 +72,9 @@ func EmailExistsInDatabase(email string) (bool, error) {
 	return resp.StatusCode == http.StatusOK, nil
 }
 
-func CheckIfIsMemberAndSendCallmeURL(email, membership string) (bool, string) {
+func CheckIfIsMemberAndSendCallmeURL(email, membership string, telegramId int64) (bool, string) {
 	baseUrl := os.Getenv("CALLME_BASE_URL")
-	userToken := GenerateCallmeUrlEndpoint(membership)
+	userToken := GenerateCallmeUrlEndpoint(telegramId)
 
 	log.Printf("sending %s/%s\n", baseUrl, userToken)
 

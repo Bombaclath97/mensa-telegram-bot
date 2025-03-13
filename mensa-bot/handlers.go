@@ -119,7 +119,7 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 				// If the message is a number
 				if err == nil {
 					// If an association exists in the App. If it does, wait for approval on app
-					if isMember, token := utils.CheckIfIsMemberAndSendCallmeURL(intermediateUserSaver.GetEmail(update.Message.From.ID), update.Message.Text); isMember {
+					if isMember, token := utils.CheckIfIsMemberAndSendCallmeURL(intermediateUserSaver.GetEmail(update.Message.From.ID), update.Message.Text, update.Message.From.ID); isMember {
 						intermediateUserSaver.SetMemberNumber(update.Message.From.ID, int64(memberNumber))
 						conversationStateSaver.SetState(update.Message.From.ID, utils.AWAITING_APPROVAL)
 						lockedUsers.LockUser(update.Message.From.ID, token)

@@ -60,9 +60,8 @@ func main() {
 		fullToken := c.Param("token")
 		userId := strings.Split(fullToken, "_")[0]
 		userIdInt, _ := strconv.ParseInt(userId, 10, 64)
-		key := strings.Split(fullToken, "_")[1]
 
-		if lockedUsers.UnlockUser(userIdInt, key) {
+		if lockedUsers.UnlockUser(userIdInt, fullToken) {
 			conversationStateSaver.SetState(userIdInt, utils.ASKED_NAME)
 			b.SendMessage(ctx, &bot.SendMessageParams{
 				ParseMode: "Markdown",
