@@ -76,6 +76,8 @@ func CheckIfIsMemberAndSendCallmeURL(email, membership string) (bool, string) {
 	baseUrl := os.Getenv("CALLME_BASE_URL")
 	userToken := GenerateCallmeUrlEndpoint(membership)
 
+	log.Printf("sending %s/%s\n", baseUrl, userToken)
+
 	req, err := http.NewRequest("POST", os.Getenv("API_ENDPOINT"), bytes.NewBufferString(url.Values{
 		"email":      {email},
 		"member_id":  {membership},
