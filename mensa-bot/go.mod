@@ -6,7 +6,6 @@ require (
 	git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250312235631-c4101b72cc45
 	github.com/go-telegram/bot v1.14.0
 	github.com/joho/godotenv v1.5.1
-	github.com/wneessen/go-mail v0.6.2
 )
 
 require (
@@ -20,6 +19,7 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.20.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect

@@ -51,29 +51,35 @@ func main() {
 		Scope: &models.BotCommandScopeAllPrivateChats{},
 	})
 
-	b.Start(ctx)
+	go func() {
+		b.Start(ctx)
+	}()
+
+	r := gin.Default()
+	r.GET("/callme_api/:token", func(c *gin.Context) {
+		fullToken := c.Param("token")
+		userId := strings.Split(fullToken, "_")[0]
+		userIdInt, _ := strconv.ParseInt(userId, 10, 64)
+		key := strings.Split(fullToken, "_")[1]
+
+		if lockedUsers.UnlockUser(userIdInt, key) {
+			conversationStateSaver.SetState(userIdInt, utils.ASKED_NAME)
+			b.SendMessage(ctx, &bot.SendMessageParams{
+				ParseMode: "Markdown",
+				ChatID:    userIdInt,
+				Text:      "Richiesta approvata, grazie! Puoi per favore scrivermi il tuo nome ora?",
+			})
+			c.JSON(200, gin.H{"message": "Utente sbloccato"})
+		} else {
+			c.JSON(400, gin.H{"message": "Errore"})
+		}
+	})
+
+	certPath := os.Getenv("CERT_PATH")
+	keyPath := os.Getenv("KEY_PATH")
 
 	go func() {
-		r := gin.Default()
-		r.GET("/callme_api/:token", func(c *gin.Context) {
-			fullToken := c.Param("token")
-			userId := strings.Split(fullToken, "_")[0]
-			userIdInt, _ := strconv.ParseInt(userId, 10, 64)
-			key := strings.Split(fullToken, "_")[1]
-
-			if lockedUsers.UnlockUser(userIdInt, key) {
-				conversationStateSaver.SetState(userIdInt, utils.ASKED_NAME)
-				b.SendMessage(ctx, &bot.SendMessageParams{
-					ParseMode: "Markdown",
-					ChatID:    userIdInt,
-					Text:      "Richiesta approvata, grazie! Puoi per favore scrivermi il tuo nome ora?",
-				})
-				c.JSON(200, gin.H{"message": "Utente sbloccato"})
-			} else {
-				c.JSON(400, gin.H{"message": "Errore"})
-			}
-		})
-		r.Run()
+		r.RunTLS(":8080", certPath, keyPath)
 	}()
 }
 

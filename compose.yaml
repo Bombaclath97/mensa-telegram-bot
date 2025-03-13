@@ -4,13 +4,14 @@ services:
     container_name: mensa-bot
     env_file: ./mensa-bot/.env
     ports:
-      - "8081:8080"
+      - "3000:8080"
     depends_on:
       - crud
 
   crud:
     build: ./mensa-telegram-crud
     container_name: crud
+    env_file: ./mensa-telegram-crud/.env
     ports:
       - "8082:8080"
     volumes:
