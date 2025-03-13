@@ -82,6 +82,7 @@ func main() {
 			}
 		} else {
 			c.JSON(200, gin.H{"message": "Richiesta rifiutata"})
+			conversationStateSaver.RemoveState(userIdInt)
 			b.SendMessage(ctx, &bot.SendMessageParams{
 				ParseMode: "Markdown",
 				ChatID:    userIdInt,
