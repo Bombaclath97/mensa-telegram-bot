@@ -79,8 +79,14 @@ func main() {
 	keyPath := os.Getenv("KEY_PATH")
 
 	go func() {
-		r.RunTLS(":8080", certPath, keyPath)
+		if err := r.RunTLS(":8080", certPath, keyPath); err != nil {
+			log.Fatalf("failed to run server: %v", err)
+		}
 	}()
+
+	// Wait for the context to be cancelled
+	<-ctx.Done()
+	log.Println("Shutting down gracefully, press Ctrl+C again to force")
 }
 
 func matchJoinRequest(update *models.Update) bool {
