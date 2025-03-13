@@ -154,9 +154,10 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 					ChatID:    update.Message.From.ID,
 					Text:      fmt.Sprintf(model.ASK_SURNAME_MESSAGE, update.Message.Text),
 				})
-			// User has inserted surname, generate confirmation code and send email, then ask for confirmation code
+			// User has inserted surname, registration is complete
 			case utils.ASKED_SURNAME:
 				user := intermediateUserSaver.GetCompleteUserAndCleanup(update.Message.From.ID)
+				user.LastName = update.Message.Text
 				utils.RegisterMember(update.Message.From.ID, user)
 
 				conversationStateSaver.RemoveState(update.Message.From.ID)

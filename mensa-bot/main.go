@@ -56,21 +56,37 @@ func main() {
 	}()
 
 	r := gin.Default()
-	r.GET("/callme_api/:token", func(c *gin.Context) {
+	r.POST("/callme_api/:token", func(c *gin.Context) {
 		fullToken := c.Param("token")
 		userId := strings.Split(fullToken, "_")[0]
 		userIdInt, _ := strconv.ParseInt(userId, 10, 64)
 
-		if lockedUsers.UnlockUser(userIdInt, fullToken) {
-			conversationStateSaver.SetState(userIdInt, utils.ASKED_NAME)
+		var callmeApi callmeApi
+
+		if err := c.ShouldBindBodyWithJSON(&callmeApi); err != nil {
+			c.JSON(400, gin.H{"message": "Received unexpected body!"})
+			return
+		}
+
+		if callmeApi.Accepted {
+			if lockedUsers.UnlockUser(userIdInt, fullToken) {
+				conversationStateSaver.SetState(userIdInt, utils.ASKED_NAME)
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ParseMode: "Markdown",
+					ChatID:    userIdInt,
+					Text:      "Richiesta approvata, grazie! Puoi per favore scrivermi il tuo nome ora?",
+				})
+				c.JSON(200, gin.H{"message": "Utente sbloccato"})
+			} else {
+				c.JSON(400, gin.H{"message": "Errore"})
+			}
+		} else {
+			c.JSON(200, gin.H{"message": "Richiesta rifiutata"})
 			b.SendMessage(ctx, &bot.SendMessageParams{
 				ParseMode: "Markdown",
 				ChatID:    userIdInt,
-				Text:      "Richiesta approvata, grazie! Puoi per favore scrivermi il tuo nome ora?",
+				Text:      "Richiesta rifiutata, mi dispiace. Se hai bisogno di aiuto, contatta il @Bombaclath97.",
 			})
-			c.JSON(200, gin.H{"message": "Utente sbloccato"})
-		} else {
-			c.JSON(400, gin.H{"message": "Errore"})
 		}
 	})
 
@@ -90,4 +106,8 @@ func main() {
 
 func matchJoinRequest(update *models.Update) bool {
 	return update.ChatJoinRequest != nil
+}
+
+type callmeApi struct {
+	Accepted bool `json:"accepted"`
 }
