@@ -13,9 +13,9 @@ func IsValidEmail(email string) bool {
 	return re.MatchString(email)
 }
 
-func GenerateCallmeUrlEndpoint(userId string) string {
+func GenerateCallmeUrlEndpoint(userId int64) string {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	code := fmt.Sprintf("%s_", userId)
+	code := fmt.Sprintf("%d_", userId)
 
 	charSet := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
