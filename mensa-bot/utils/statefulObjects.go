@@ -145,8 +145,8 @@ func (i *IntermediateUserSaver) RemoveUser(userID int64) {
 }
 
 func (i *IntermediateUserSaver) GetCompleteUserAndCleanup(userID int64) model.User {
-	i.RemoveUser(userID)
 	user := (*i)[userID]
+	i.RemoveUser(userID)
 	return model.User{
 		TelegramID:   userID,
 		FirstName:    user.firstName,
