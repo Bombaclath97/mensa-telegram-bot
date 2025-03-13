@@ -73,16 +73,17 @@ func EmailExistsInDatabase(email string) (bool, error) {
 }
 
 func CheckIfIsMemberAndSendCallmeURL(email, membership string, telegramId int64) (bool, string) {
-	baseUrl := os.Getenv("CALLME_BASE_URL")
+	callmeBaseUrl := os.Getenv("CALLME_BASE_URL")
 	userToken := GenerateCallmeUrlEndpoint(telegramId)
 
-	log.Printf("sending %s/%s\n", baseUrl, userToken)
+	mensaApiEndpoint := os.Getenv("API_ENDPOINT")
 
-	req, err := http.NewRequest("POST", os.Getenv("API_ENDPOINT"), bytes.NewBufferString(url.Values{
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/valid", mensaApiEndpoint), bytes.NewBufferString(url.Values{
 		"email":      {email},
 		"member_id":  {membership},
-		"callme_url": {fmt.Sprintf("%s/%s", baseUrl, userToken)},
+		"callme_url": {fmt.Sprintf("%s/%s", callmeBaseUrl, userToken)},
 	}.Encode()))
+
 	if err != nil {
 		log.Fatalln(err)
 	}
