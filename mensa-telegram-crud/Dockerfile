@@ -1,11 +1,14 @@
-FROM golang:1.24.0-alpine3.21 AS build
+FROM golang:1.24.1-alpine3.21 AS build
 
-RUN apk add --no-cache --update gcc g++ 
+RUN 
 
 WORKDIR /app
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN apk add --no-cache --update gcc g++ git && \
+    echo "${CONNECT_STRING}" > ~/.netrc && \
+    go env -w GOPRIVATE="git.bombaclath.cc" && \
+    go mod download
 
 COPY . .
 
