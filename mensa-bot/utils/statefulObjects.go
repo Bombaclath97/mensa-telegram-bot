@@ -170,6 +170,10 @@ func (l *LockedUsers) UnlockUser(userID int64, key string) bool {
 	return false
 }
 
+func (l *LockedUsers) UnconditionalUnlockUser(userID int64) {
+	delete(*l, userID)
+}
+
 func (l *LockedUsers) IsUserLocked(userID int64) bool {
 	_, ok := (*l)[userID]
 	return ok
