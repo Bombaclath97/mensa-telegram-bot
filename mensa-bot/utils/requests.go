@@ -78,7 +78,7 @@ func CheckIfIsMemberAndSendCallmeURL(email, membership string, telegramId int64)
 
 	mensaApiEndpoint := os.Getenv("API_ENDPOINT")
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/valid", mensaApiEndpoint), bytes.NewBufferString(url.Values{
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/request", mensaApiEndpoint), bytes.NewBufferString(url.Values{
 		"email":      {email},
 		"member_id":  {membership},
 		"callme_url": {fmt.Sprintf("%s/%s", callmeBaseUrl, userToken)},
