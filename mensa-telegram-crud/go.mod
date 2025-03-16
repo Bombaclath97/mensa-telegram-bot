@@ -3,7 +3,7 @@ module git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-telegram-crud
 go 1.24.1
 
 require (
-	git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250312231548-51801f217507
+	git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250316134949-075567b5c628
 	github.com/gin-gonic/gin v1.10.0
 	github.com/mattn/go-sqlite3 v1.14.24
 )

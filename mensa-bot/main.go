@@ -5,9 +5,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 
+	"github.com/Bombaclath97/bomba-go-utils/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
@@ -22,6 +21,8 @@ var intermediateUserSaver = utils.IntermediateUserSaver{}
 var lockedUsers = utils.LockedUsers{}
 
 func main() {
+	logger.Configure("mensa-bot")
+
 	godotenv.Load()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -52,50 +53,21 @@ func main() {
 	})
 
 	go func() {
+		log.Println("Starting telegram bot")
 		b.Start(ctx)
 	}()
 
 	r := gin.Default()
-	r.POST("/callme_api/:token", func(c *gin.Context) {
-		fullToken := c.Param("token")
-		userId := strings.Split(fullToken, "_")[0]
-		userIdInt, _ := strconv.ParseInt(userId, 10, 64)
 
-		var callmeApi callmeApi
-
-		if err := c.ShouldBindBodyWithJSON(&callmeApi); err != nil {
-			c.JSON(400, gin.H{"message": "Received unexpected body!"})
-			return
-		}
-
-		if callmeApi.Accepted {
-			if lockedUsers.UnlockUser(userIdInt, fullToken) {
-				conversationStateSaver.SetState(userIdInt, utils.ASKED_NAME)
-				b.SendMessage(ctx, &bot.SendMessageParams{
-					ParseMode: "Markdown",
-					ChatID:    userIdInt,
-					Text:      "Richiesta approvata, grazie! Puoi per favore scrivermi il tuo nome ora?",
-				})
-				c.JSON(200, gin.H{"message": "Utente sbloccato"})
-			} else {
-				c.JSON(400, gin.H{"message": "Errore"})
-			}
-		} else {
-			c.JSON(200, gin.H{"message": "Richiesta rifiutata"})
-			conversationStateSaver.RemoveState(userIdInt)
-			lockedUsers.UnconditionalUnlockUser(userIdInt)
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ParseMode: "Markdown",
-				ChatID:    userIdInt,
-				Text:      "Richiesta rifiutata, mi dispiace. Se hai bisogno di aiuto, contatta il @Bombaclath97.",
-			})
-		}
+	r.POST("/callme_api/:token", func(ctx *gin.Context) {
+		postCallmeAPI(ctx, b)
 	})
 
 	certPath := os.Getenv("CERT_PATH")
 	keyPath := os.Getenv("KEY_PATH")
 
 	go func() {
+		log.Printf("INFO: Starting server on port 8080 with cert %s and key %s\n", certPath, keyPath)
 		if err := r.RunTLS(":8080", certPath, keyPath); err != nil {
 			log.Fatalf("failed to run server: %v", err)
 		}
