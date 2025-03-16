@@ -3,12 +3,13 @@ module git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot
 go 1.24.1
 
 require (
-	git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250312235631-c4101b72cc45
+	git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250316134949-075567b5c628
 	github.com/go-telegram/bot v1.14.0
 	github.com/joho/godotenv v1.5.1
 )
 
 require (
+	github.com/Bombaclath97/bomba-go-utils v0.0.0-20250315120750-ca551e87b44a
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
