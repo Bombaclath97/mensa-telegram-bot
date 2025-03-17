@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 
@@ -21,14 +20,16 @@ var conversationStateSaver = utils.ConversationStateSaver{}
 var intermediateUserSaver = utils.IntermediateUserSaver{}
 var lockedUsers = utils.LockedUsers{}
 
+var log = logger.Configure("mensa-bot")
+
 func main() {
-	logger.Configure("mensa-bot")
 
 	log.Println("Loading Tolgee")
 
 	tolgee.Load(os.Getenv("TOLGEE_API_KEY"))
 
 	godotenv.Load()
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -68,6 +69,9 @@ func main() {
 
 	r.POST("/callme_api/:token", func(ctx *gin.Context) {
 		postCallmeAPI(ctx, b)
+	})
+	r.GET("/cleanup_routine", func(ctx *gin.Context) {
+		cleanupRoutine(ctx, b)
 	})
 
 	certPath := os.Getenv("CERT_PATH")

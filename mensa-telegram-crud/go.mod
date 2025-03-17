@@ -4,8 +4,9 @@ go 1.24.1
 
 require (
 	git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250317112607-decd2f932199
+	github.com/Bombaclath97/bomba-go-utils v0.0.0-20250315120750-ca551e87b44a
 	github.com/gin-gonic/gin v1.10.0
-	github.com/mattn/go-sqlite3 v1.14.24
+	github.com/mutecomm/go-sqlcipher v0.0.0-20190227152316-55dbde17881f
 )
 
 require (
