@@ -190,6 +190,7 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 					utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.general.error", "it"))
 				} else {
 					for _, group := range groupsToKickFrom {
+						log.Printf("INFO: Kicking user %d from group %d", update.Message.From.ID, group)
 						b.UnbanChatMember(ctx, &bot.UnbanChatMemberParams{
 							ChatID: group,
 							UserID: update.Message.From.ID,

@@ -46,6 +46,8 @@ func main() {
 	initDB()
 	defer db.Close()
 
+	db.Exec("PRAGMA foreign_keys=ON")
+
 	r := gin.Default()
 	r.GET("/members/:id", getMember)
 	r.POST("/members", createMember)
