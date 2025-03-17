@@ -102,6 +102,11 @@ func onChatJoinRequest(ctx context.Context, b *bot.Bot, update *models.Update) {
 }
 
 func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if conversationStateSaver == nil {
+		log.Println("conversationStateSaver is nil")
+		conversationStateSaver = utils.ConversationStateSaver{}
+	}
+
 	state := conversationStateSaver.GetState(update.Message.From.ID)
 	if update.Message.Text == "/cancel" && state > -1 {
 		log.Printf("INFO: User %d cancelled the registration process", update.Message.From.ID)
