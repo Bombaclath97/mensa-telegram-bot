@@ -191,6 +191,10 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 				} else {
 					for _, group := range groupsToKickFrom {
 						log.Printf("INFO: Kicking user %d from group %d", update.Message.From.ID, group.GroupID)
+						b.BanChatMember(ctx, &bot.BanChatMemberParams{
+							ChatID: group.GroupID,
+							UserID: update.Message.From.ID,
+						})
 						b.UnbanChatMember(ctx, &bot.UnbanChatMemberParams{
 							ChatID: group.GroupID,
 							UserID: update.Message.From.ID,
