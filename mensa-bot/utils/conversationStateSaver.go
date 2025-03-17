@@ -8,6 +8,7 @@ const (
 	ASKED_NAME
 	ASKED_SURNAME
 	ASKED_CONFIRMATION_CODE
+	ASKED_DELETE_CONFIRMATION
 )
 
 type ConversationStateSaver map[int64]int
