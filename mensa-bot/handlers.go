@@ -209,6 +209,10 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 		}
 	}
 	if update.Message.ForwardOrigin != nil && utils.IsMemberRegistered(update.Message.From.ID) {
+		if update.Message.ForwardOrigin.Type == models.MessageOriginTypeHiddenUser {
+			utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.general.forwardedhidden", "it"))
+			return
+		}
 		memberToCheck := update.Message.ForwardOrigin.MessageOriginUser.SenderUser.ID
 		if utils.IsMemberRegistered(memberToCheck) {
 			user, _ := utils.GetMember(memberToCheck)
