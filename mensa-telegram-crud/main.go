@@ -26,7 +26,13 @@ func initDB() {
 		first_name TEXT NOT NULL,
 		last_name TEXT NOT NULL,
 		member_number INTEGER NOT NULL
-	);`
+	);
+	CREATE TABLE IF NOT EXISTS groups (
+	    user_id INTEGER NOT NULL,
+		group_id INTEGER NOT NULL,
+	    FOREIGN KEY(user_id) REFERENCES users(telegram_id) ON DELETE CASCADE ON UPDATE CASCADE
+	);
+	`
 
 	_, err = db.Exec(stmt)
 	if err != nil {
