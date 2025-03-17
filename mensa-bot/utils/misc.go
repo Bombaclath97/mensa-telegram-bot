@@ -21,7 +21,7 @@ func GenerateCallmeUrlEndpoint(userId int64) string {
 
 	charSet := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-	for i := 0; i < 15; i++ {
+	for range 15 {
 		code.WriteByte(charSet[r.Intn(len(charSet))])
 	}
 

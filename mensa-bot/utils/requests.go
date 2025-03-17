@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
 
 	model "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models"
+	"github.com/Bombaclath97/bomba-go-utils/logger"
 )
 
 var crudEndpoint = os.Getenv("CRUD_ENDPOINT")
+var log = logger.Configure("mensa-bot")
 
 func IsMemberRegistered(userID int64) bool {
 	resp, err := http.Get("http://" + crudEndpoint + "/members/" + fmt.Sprint(userID))
@@ -34,7 +35,7 @@ func GetMember(userID int64) (model.User, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return model.User{}, fmt.Errorf("member not found")
+		return model.User{}, fmt.Errorf("member not found, status code: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -108,6 +109,41 @@ func CheckIfIsMemberAndSendCallmeURL(email, membership string, telegramId int64)
 	return resp.StatusCode == http.StatusOK, userToken
 }
 
+func IsMembershipActive(intMembership int64) bool {
+	mensaApiEndpoint := os.Getenv("API_ENDPOINT")
+
+	membership := fmt.Sprintf("%d", intMembership)
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/valid", mensaApiEndpoint), bytes.NewBufferString(url.Values{
+		"member_id": {membership},
+	}.Encode()))
+
+	if err != nil {
+		log.Printf("ERROR: Failed to create request: %v", err)
+		return false
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("API_BEARER_TOKEN")))
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("ERROR: Failed to send request: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	var checkValidity model.CheckValidity
+	err = json.NewDecoder(resp.Body).Decode(&checkValidity)
+	if err != nil {
+		log.Printf("ERROR: Failed to decode response body: %v", err)
+		return false
+	}
+
+	return checkValidity.IsMembershipActive
+}
+
 func RegisterGroupForUser(userId, chatId int64) int {
 	group := model.Group{
 		GroupID: int(chatId),
@@ -170,4 +206,29 @@ func DeleteMember(userId int64) int {
 	defer resp.Body.Close()
 
 	return resp.StatusCode
+}
+
+func GetAllMembers() []model.User {
+	var users []model.User
+
+	resp, err := http.Get("http://" + crudEndpoint + "/members")
+	if err != nil {
+		log.Printf("ERROR: Failed to get all users: %v", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("ERROR: Failed to get all users: %v", err)
+		return nil
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&users)
+
+	if err != nil {
+		log.Printf("ERROR: Failed to decode response body: %v", err)
+		return nil
+	}
+
+	return users
 }
