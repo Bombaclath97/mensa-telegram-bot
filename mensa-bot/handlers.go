@@ -182,6 +182,7 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 			utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.creationsuccess", "it"))
 		case utils.ASKED_DELETE_CONFIRMATION:
 			if update.Message.Text == "Sono sicuro di ciò che faccio" {
+				conversationStateSaver.RemoveState(update.Message.From.ID)
 				groupsToKickFrom, err := utils.GetGroupsForUser(update.Message.From.ID)
 
 				if err != nil {
