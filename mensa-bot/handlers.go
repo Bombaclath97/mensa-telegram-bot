@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 	"strconv"
 	"strings"
 
+	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/tolgee"
 	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/utils"
-	model "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models"
 	"github.com/gin-gonic/gin"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -17,62 +15,54 @@ import (
 
 func startHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userId := update.Message.From.ID
+	if conversationStateSaver.GetState(userId) > -1 {
+		return
+	}
 	if !utils.IsMemberRegistered(userId) {
 		log.Printf("INFO: User %d is not registered", userId)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    userId,
-			Text:      model.NOT_REGISTERED_MESSAGE,
-		})
+
+		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.startcommand.notregistered", "it"))
 	} else {
 		log.Printf("INFO: User %d is already registered", userId)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    userId,
-			Text:      fmt.Sprintf(model.ALREADY_REGISTERED_MESSAGE, update.Message.From.FirstName),
-		})
+		paramMap := map[string]string{}
+
+		chatUser, err := utils.GetMember(userId)
+		if err != nil {
+			paramMap["name"] = update.Message.From.FirstName
+		} else {
+			paramMap["name"] = chatUser.FirstName
+		}
+
+		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.startcommand.alreadyregistered", "it", paramMap))
 	}
 }
 
 func profileHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userId := update.Message.From.ID
+	if conversationStateSaver.GetState(userId) > -1 {
+		return
+	}
 	if !utils.IsMemberRegistered(userId) {
 		log.Printf("INFO: Initiating profile registration for user %d", userId)
 		conversationStateSaver.SetState(userId, utils.ASKED_EMAIL)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    userId,
-			Text:      model.INITIATE_PROFILE_REGISTRATION_MESSAGE,
-		})
+		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.profilecommand.initiateprofileregister", "it"))
 	} else {
 		log.Printf("INFO: Showing profile for user %d", userId)
-		bBody, err := utils.GetMember(userId)
+		user, err := utils.GetMember(userId)
 		if err != nil {
 			log.Printf("ERROR: Failed to get member info for user %d: %v", userId, err)
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ParseMode: "Markdown",
-				ChatID:    userId,
-				Text:      "Errore nel recupero delle informazioni dell'utente.",
-			})
+
+			utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.general.error", "it"))
 			return
 		}
 
-		var user model.User
-		if err := json.Unmarshal(bBody, &user); err != nil {
-			log.Printf("ERROR: Failed to unmarshal member info for user %d: %v", userId, err)
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ParseMode: "Markdown",
-				ChatID:    userId,
-				Text:      "Errore nel parsing delle informazioni dell'utente.",
-			})
-			return
+		paramMap := map[string]string{
+			"name":    user.FirstName,
+			"surname": user.LastName,
+			"email":   user.MensaEmail,
 		}
 
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    userId,
-			Text:      fmt.Sprintf(model.PROFILE_SHOW_MESSAGE, user.FirstName, user.LastName, user.MensaEmail),
-		})
+		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.profilecommand.showprofile", "it", paramMap))
 	}
 }
 
@@ -81,14 +71,19 @@ func onChatJoinRequest(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userId := update.ChatJoinRequest.From.ID
 	firstName := update.ChatJoinRequest.From.FirstName
 
+	if conversationStateSaver.GetState(userId) > -1 {
+		return
+	}
+
 	// Check if user has a bot profile registered
 	if !utils.IsMemberRegistered(userId) {
 		log.Printf("INFO: User %d requested to join chat %d but is not registered", userId, chatId)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    userId,
-			Text:      fmt.Sprintf(model.INVITE_TO_JOIN_MESSAGE, firstName),
-		})
+
+		paramMap := map[string]string{
+			"name": firstName,
+		}
+
+		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.welcome.invitetojoin", "it", paramMap))
 		requestsToApprove.AddRequest(userId, chatId)
 	} else {
 		log.Printf("INFO: Approving chat join request for user %d in chat %d", userId, chatId)
@@ -96,21 +91,25 @@ func onChatJoinRequest(ctx context.Context, b *bot.Bot, update *models.Update) {
 			ChatID: chatId,
 			UserID: userId,
 		})
+
+		paramMap := map[string]string{
+			"groupName": update.ChatJoinRequest.Chat.Title,
+		}
+
+		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.welcome.approvedtogroup", "it", paramMap))
+		utils.RegisterGroupForUser(userId, chatId)
 	}
 }
 
 func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 	state := conversationStateSaver.GetState(update.Message.From.ID)
-	if update.Message.Text == "/cancel" {
+	if update.Message.Text == "/cancel" && state > -1 {
 		log.Printf("INFO: User %d cancelled the registration process", update.Message.From.ID)
 		conversationStateSaver.RemoveState(update.Message.From.ID)
 		intermediateUserSaver.RemoveUser(update.Message.From.ID)
 		lockedUsers.UnconditionalUnlockUser(update.Message.From.ID)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    update.Message.From.ID,
-			Text:      model.CANCEL_REGISTRATION_MESSAGE,
-		})
+
+		utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.cancelcommand.cancelled", "it"))
 		return
 	}
 	if state > -1 && !lockedUsers.IsUserLocked(update.Message.From.ID) {
@@ -123,26 +122,17 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 					log.Printf("INFO: User %d provided a valid email: %s", update.Message.From.ID, update.Message.Text)
 					intermediateUserSaver.SetEmail(update.Message.From.ID, update.Message.Text)
 					conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_MEMBER_NUMBER)
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      model.ASK_MEMBER_NUMBER_MESSAGE,
-					})
+
+					utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.requestmemberid", "it"))
 				} else {
-					log.Printf("ERROR: Email %s already registered for user %d", update.Message.Text, update.Message.From.ID)
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      model.EMAIL_ALREADY_REGISTERED,
-					})
+					log.Printf("INFO: Email %s already registered for user %d", update.Message.Text, update.Message.From.ID)
+
+					utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.emailalreadyregistered", "it"))
 				}
 			} else {
-				log.Printf("ERROR: Invalid email provided by user %d: %s", update.Message.From.ID, update.Message.Text)
-				b.SendMessage(ctx, &bot.SendMessageParams{
-					ParseMode: "Markdown",
-					ChatID:    update.Message.From.ID,
-					Text:      model.EMAIL_NOT_VALID_MESSAGE,
-				})
+				log.Printf("INFO: Invalid email provided by user %d: %s", update.Message.From.ID, update.Message.Text)
+
+				utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.emailnotvalid", "it"))
 			}
 		// User has inserted email, waiting for member number
 		case utils.ASKED_MEMBER_NUMBER:
@@ -157,38 +147,29 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 					conversationStateSaver.SetState(update.Message.From.ID, utils.AWAITING_APPROVAL)
 					lockedUsers.LockUser(update.Message.From.ID, token)
 
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      model.AWAIT_APPROVAL_ON_APP,
-					})
+					utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.awaitappinteraction", "it"))
 				} else { // Associazione inesistente, ricomincia da capo
-					log.Printf("ERROR: Non-existent association for user %d with member number %d", update.Message.From.ID, memberNumber)
-					b.SendMessage(ctx, &bot.SendMessageParams{
-						ParseMode: "Markdown",
-						ChatID:    update.Message.From.ID,
-						Text:      fmt.Sprintf(model.NON_EXISTENT_ASSOCIATION_MESSAGE, intermediateUserSaver.GetEmail(update.Message.From.ID), memberNumber),
-					})
+					log.Printf("INFO: Non-existent association for user %d with member number %d", update.Message.From.ID, memberNumber)
 					intermediateUserSaver.RemoveUser(update.Message.From.ID)
 					conversationStateSaver.RemoveState(update.Message.From.ID)
+
+					utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.associationnonexistent", "it"))
 				}
 			} else { // The message is not a number
-				log.Printf("ERROR: Invalid member number provided by user %d: %s", update.Message.From.ID, update.Message.Text)
-				b.SendMessage(ctx, &bot.SendMessageParams{
-					ParseMode: "Markdown",
-					ChatID:    update.Message.From.ID,
-					Text:      model.MEMBER_NUMBER_IS_NOT_VALID_MESSAGE,
-				})
+				log.Printf("INFO: Invalid member number provided by user %d: %s", update.Message.From.ID, update.Message.Text)
+
+				utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.notvalidmemberid", "it"))
 			}
 		// User has inserted name, waiting for surname
 		case utils.ASKED_NAME:
 			intermediateUserSaver.SetFirstName(update.Message.From.ID, update.Message.Text)
 			conversationStateSaver.SetState(update.Message.From.ID, utils.ASKED_SURNAME)
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ParseMode: "Markdown",
-				ChatID:    update.Message.From.ID,
-				Text:      fmt.Sprintf(model.ASK_SURNAME_MESSAGE, update.Message.Text),
-			})
+
+			paramMap := map[string]string{
+				"name": update.Message.Text,
+			}
+
+			utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.requestlastname", "it", paramMap))
 		// User has inserted surname, registration is complete
 		case utils.ASKED_SURNAME:
 			user := intermediateUserSaver.GetCompleteUserAndCleanup(update.Message.From.ID)
@@ -197,53 +178,76 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 			conversationStateSaver.RemoveState(update.Message.From.ID)
 			intermediateUserSaver.RemoveUser(update.Message.From.ID)
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ParseMode: "Markdown",
-				ChatID:    update.Message.From.ID,
-				Text:      model.REGISTRATION_SUCCESS_MESSAGE,
-			})
 
+			utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.creationsuccess", "it"))
+		case utils.ASKED_DELETE_CONFIRMATION:
+			if update.Message.Text == "Sono sicuro di ciò che faccio" {
+				groupsToKickFrom, err := utils.GetGroupsForUser(update.Message.From.ID)
+
+				if err != nil {
+					log.Printf("ERROR: Failed to get groups for user %d: %v", update.Message.From.ID, err)
+					utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.general.error", "it"))
+				} else {
+					for _, group := range groupsToKickFrom {
+						b.BanChatMember(ctx, &bot.BanChatMemberParams{
+							ChatID: group,
+							UserID: update.Message.From.ID,
+						})
+						b.UnbanChatMember(ctx, &bot.UnbanChatMemberParams{
+							ChatID: group,
+							UserID: update.Message.From.ID,
+						})
+					}
+				}
+
+				utils.DeleteMember(update.Message.From.ID)
+				utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.deletecommand.deleted", "it"))
+			} else {
+				utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.deletecommand.askagain", "it"))
+			}
+		}
+	}
+	if update.Message.ForwardOrigin != nil && utils.IsMemberRegistered(update.Message.From.ID) {
+		memberToCheck := update.Message.ForwardOrigin.MessageOriginUser.SenderUser.ID
+		if utils.IsMemberRegistered(memberToCheck) {
+			user, _ := utils.GetMember(memberToCheck)
+
+			paramMap := map[string]string{
+				"name":     user.FirstName,
+				"lastName": user.LastName,
+			}
+
+			utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.general.forwardedregistered", "it", paramMap))
+		} else {
+			utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.general.forwardednotregistered", "it"))
 		}
 	}
 }
 
 func approveHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	userId := update.Message.From.ID
+	if conversationStateSaver.GetState(userId) > -1 {
+		return
+	}
+
 	if !utils.IsMemberRegistered(update.Message.From.ID) {
-		log.Printf("ERROR: User %d is not registered and cannot approve requests", update.Message.From.ID)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    update.Message.From.ID,
-			Text:      model.NOT_REGISTERED_MESSAGE,
-		})
+		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.startcommand.notregistered", "it"))
 	} else {
 		requestsToJoin, ok := requestsToApprove.GetRequests(update.Message.From.ID)
 		log.Printf("INFO: Approving requests for user %d: %v", update.Message.From.ID, requestsToJoin)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    update.Message.From.ID,
-			Text:      "Approving requests..." + fmt.Sprint(requestsToJoin),
-		})
 		if !ok {
-			log.Printf("INFO: No requests to approve for user %d", update.Message.From.ID)
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ParseMode: "Markdown",
-				ChatID:    update.Message.From.ID,
-				Text:      model.NO_REQUESTS_TO_APPROVE,
-			})
+			utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.approvecommand.norequesttoapprove", "it"))
 		} else {
 			for _, chatId := range requestsToJoin {
-				log.Printf("INFO: Approving chat join request for user %d in chat %d", update.Message.From.ID, chatId)
 				b.ApproveChatJoinRequest(ctx, &bot.ApproveChatJoinRequestParams{
 					ChatID: chatId,
 					UserID: update.Message.From.ID,
 				})
+
+				utils.RegisterGroupForUser(update.Message.From.ID, chatId)
 			}
 			requestsToApprove.RemoveRequests(update.Message.From.ID)
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ParseMode: "Markdown",
-				ChatID:    update.Message.From.ID,
-				Text:      model.REQUESTS_APPROVED_MESSAGE,
-			})
+			utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.approvecommand.approved", "it"))
 		}
 	}
 }
@@ -273,35 +277,48 @@ func postCallmeAPI(ctx *gin.Context, b *bot.Bot) {
 			log.Printf("INFO: Unlocking user %s", userId)
 
 			conversationStateSaver.SetState(userIdInt, utils.ASKED_NAME)
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ParseMode: "Markdown",
-				ChatID:    userIdInt,
-				Text:      "Richiesta approvata, grazie! Puoi per favore scrivermi il tuo nome ora?",
-			})
+			utils.SendMessage(b, ctx, userIdInt, tolgee.GetTranslation("telegrambot.conversation.approvedapproval", "it"))
 			ctx.JSON(200, gin.H{"message": "Utente sbloccato"})
 		} else {
-			log.Printf("ERROR: Couldn't unlock user %s", userId)
+			log.Printf("ERROR: Couldn't unlock user %s. Received full-token %s", userId, fullToken)
 			ctx.JSON(400, gin.H{"message": "Errore"})
 		}
 	} else {
-		log.Printf("INFO: Refusing callme API request for user %s", userId)
+		log.Printf("INFO: User %s rejected the API call!", userId)
 
 		ctx.JSON(200, gin.H{"message": "Richiesta rifiutata"})
 		conversationStateSaver.RemoveState(userIdInt)
 		lockedUsers.UnconditionalUnlockUser(userIdInt)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ParseMode: "Markdown",
-			ChatID:    userIdInt,
-			Text:      "Richiesta rifiutata, mi dispiace. Se hai bisogno di aiuto, contatta il @Bombaclath97.",
-		})
+
+		utils.SendMessage(b, ctx, userIdInt, tolgee.GetTranslation("telegrambot.conversation.rejectedapproval", "it"))
 	}
 }
 
 func appHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	log.Printf("INFO: Sending app download message to user %d", update.Message.From.ID)
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ParseMode: "Markdown",
-		ChatID:    update.Message.From.ID,
-		Text:      model.APP_DOWNLOAD_MESSAGE,
-	})
+	userId := update.Message.From.ID
+	if conversationStateSaver.GetState(userId) > -1 {
+		return
+	}
+
+	utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.appcommand.sendapp", "it"))
+}
+
+func deleteHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	userId := update.Message.From.ID
+	if conversationStateSaver.GetState(userId) > -1 {
+		return
+	}
+
+	if !utils.IsMemberRegistered(userId) {
+		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.startcommand.notregistered", "it"))
+	} else {
+		user, _ := utils.GetMember(userId)
+
+		paramMap := map[string]string{
+			"name": user.FirstName,
+		}
+
+		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.deletecommand.deleteprofile", "it", paramMap))
+		conversationStateSaver.SetState(userId, utils.ASKED_DELETE_CONFIRMATION)
+	}
 }

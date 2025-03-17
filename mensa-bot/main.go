@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
+	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/tolgee"
 	"git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot/utils"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -22,6 +23,10 @@ var lockedUsers = utils.LockedUsers{}
 
 func main() {
 	logger.Configure("mensa-bot")
+
+	log.Println("Loading Tolgee")
+
+	tolgee.Load(os.Getenv("TOLGEE_API_KEY"))
 
 	godotenv.Load()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -41,6 +46,7 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/profilo", bot.MatchTypeExact, profileHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/approva", bot.MatchTypeExact, approveHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/app", bot.MatchTypeExact, appHandler)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/elimina", bot.MatchTypeExact, deleteHandler)
 
 	b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
 		Commands: []models.BotCommand{
@@ -48,6 +54,7 @@ func main() {
 			{Command: "profilo", Description: "Crea o visualizza il tuo profilo"},
 			{Command: "approva", Description: "Richiedi l'approvazione delle richieste in sospeso"},
 			{Command: "app", Description: "Tutte le informazioni sull'app ufficiale Mensa Italia"},
+			{Command: "elimina", Description: "Elimina il tuo profilo"},
 		},
 		Scope: &models.BotCommandScopeAllPrivateChats{},
 	})
