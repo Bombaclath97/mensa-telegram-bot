@@ -102,15 +102,11 @@ func onChatJoinRequest(ctx context.Context, b *bot.Bot, update *models.Update) {
 }
 
 func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if conversationStateSaver == nil {
-		log.Println("conversationStateSaver is nil")
-		conversationStateSaver = utils.ConversationStateSaver{}
-	}
-
 	state := conversationStateSaver.GetState(update.Message.From.ID)
+
 	if update.Message.Text == "/cancel" && state > -1 {
 		log.Printf("INFO: User %d cancelled the registration process", update.Message.From.ID)
-		conversationStateSaver.RemoveState(update.Message.From.ID)
+		conversationStateSaver.SetState(update.Message.From.ID, utils.IDLE)
 		intermediateUserSaver.RemoveUser(update.Message.From.ID)
 		lockedUsers.UnconditionalUnlockUser(update.Message.From.ID)
 
@@ -156,7 +152,7 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 				} else { // Associazione inesistente, ricomincia da capo
 					log.Printf("INFO: Non-existent association for user %d with member number %d", update.Message.From.ID, memberNumber)
 					intermediateUserSaver.RemoveUser(update.Message.From.ID)
-					conversationStateSaver.RemoveState(update.Message.From.ID)
+					conversationStateSaver.SetState(update.Message.From.ID, utils.IDLE)
 
 					utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.associationnonexistent", "it"))
 				}
@@ -181,13 +177,13 @@ func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
 			user.LastName = update.Message.Text
 			utils.RegisterMember(update.Message.From.ID, user)
 
-			conversationStateSaver.RemoveState(update.Message.From.ID)
+			conversationStateSaver.SetState(update.Message.From.ID, utils.IDLE)
 			intermediateUserSaver.RemoveUser(update.Message.From.ID)
 
 			utils.SendMessage(b, ctx, update.Message.From.ID, tolgee.GetTranslation("telegrambot.conversation.creationsuccess", "it"))
 		case utils.ASKED_DELETE_CONFIRMATION:
 			if update.Message.Text == "Sono sicuro di ciò che faccio" {
-				conversationStateSaver.RemoveState(update.Message.From.ID)
+				conversationStateSaver.SetState(update.Message.From.ID, utils.IDLE)
 				groupsToKickFrom, err := utils.GetGroupsForUser(update.Message.From.ID)
 
 				if err != nil {
@@ -307,7 +303,7 @@ func postCallmeAPI(ctx *gin.Context, b *bot.Bot) {
 		log.Printf("INFO: User %s rejected the API call!", userId)
 
 		ctx.JSON(200, gin.H{"message": "Richiesta rifiutata"})
-		conversationStateSaver.RemoveState(userIdInt)
+		conversationStateSaver.SetState(userIdInt, utils.IDLE)
 		lockedUsers.UnconditionalUnlockUser(userIdInt)
 
 		utils.SendMessage(b, ctx, userIdInt, tolgee.GetTranslation("telegrambot.conversation.rejectedapproval", "it"))
