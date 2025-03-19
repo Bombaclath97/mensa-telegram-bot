@@ -30,23 +30,68 @@ func initDB() {
 		mensa_email TEXT NOT NULL,
 		first_name TEXT NOT NULL,
 		last_name TEXT NOT NULL,
-		member_number INTEGER NOT NULL
+		member_number INTEGER NOT NULL,
+		is_bot_admin BOOLEAN DEFAULT FALSE,
+		is_international BOOLEAN DEFAULT FALSE
 	);
 	CREATE TABLE IF NOT EXISTS groups (
 	    user_id INTEGER NOT NULL,
 		group_id INTEGER NOT NULL,
-	    FOREIGN KEY(user_id) REFERENCES users(telegram_id) ON DELETE CASCADE ON UPDATE CASCADE
+		is_group_admin BOOLEAN DEFAULT FALSE,
+		FOREIGN KEY(user_id) REFERENCES users(telegram_id) ON DELETE CASCADE ON UPDATE CASCADE
 	);
 	`
 
 	_, err = db.Exec(stmt)
 	if err != nil {
 		log.Fatal(err)
-	} else {
-		log.Println("Database initialized")
 	}
 
 	db.Exec("PRAGMA foreign_keys=ON")
+
+	addColumnIfNotExists("users", "is_bot_admin", "BOOLEAN DEFAULT FALSE")
+	addColumnIfNotExists("users", "is_international", "BOOLEAN DEFAULT FALSE")
+	addColumnIfNotExists("groups", "is_group_admin", "BOOLEAN DEFAULT FALSE")
+
+	log.Println("Database initialized")
+}
+
+func addColumnIfNotExists(table, column, definition string) {
+	query := fmt.Sprintf("PRAGMA table_info(%s)", table)
+	rows, err := db.Query(query)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+
+	columnExists := false
+	for rows.Next() {
+		var cid int
+		var name, ctype, notnull, pk string
+		var dfltValue interface{}
+		err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+		if name == column {
+			log.Printf("Column %s already exists in table %s", column, table)
+			columnExists = true
+			break
+		}
+	}
+
+	if !columnExists {
+		query = fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)
+		_, err = db.Exec(query)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			log.Printf("Column %s was missing and has been added to table %s", column, table)
+		}
+	}
 }
 
 func main() {
@@ -54,6 +99,7 @@ func main() {
 	defer db.Close()
 
 	r := gin.Default()
+
 	r.GET("/members/:id", getMember)
 	r.POST("/members", createMember)
 	r.PUT("/members/:id", updateMember)
@@ -73,7 +119,7 @@ func main() {
 func getMember(c *gin.Context) {
 	var user model.User
 	id := c.Param("id")
-	err := db.QueryRow("SELECT * FROM users WHERE telegram_id=?", id).Scan(&user.TelegramID, &user.MensaEmail, &user.FirstName, &user.LastName, &user.MemberNumber)
+	err := db.QueryRow("SELECT * FROM users WHERE telegram_id=?", id).Scan(&user.TelegramID, &user.MensaEmail, &user.FirstName, &user.LastName, &user.MemberNumber, &user.IsBotAdmin, &user.IsInternational)
 	if err != nil {
 		log.Printf("[GET /members/:id] User not found: %v", err)
 		c.JSON(404, gin.H{"error": "User not found"})
@@ -97,7 +143,7 @@ func getAllMembers(c *gin.Context) {
 
 	for rows.Next() {
 		var user model.User
-		err := rows.Scan(&user.TelegramID, &user.MensaEmail, &user.FirstName, &user.LastName, &user.MemberNumber)
+		err := rows.Scan(&user.TelegramID, &user.MensaEmail, &user.FirstName, &user.LastName, &user.MemberNumber, &user.IsBotAdmin, &user.IsInternational)
 		if err != nil {
 			log.Printf("[GET /members] Error scanning users: %v", err)
 			c.JSON(500, gin.H{"error": err.Error()})
@@ -118,7 +164,7 @@ func createMember(c *gin.Context) {
 		return
 	}
 
-	_, err := db.Exec("INSERT INTO users (telegram_id, mensa_email, first_name, last_name, member_number) VALUES (?, ?, ?, ?, ?)", user.TelegramID, user.MensaEmail, user.FirstName, user.LastName, user.MemberNumber)
+	_, err := db.Exec("INSERT INTO users (telegram_id, mensa_email, first_name, last_name, member_number, is_bot_admin, is_international) VALUES (?, ?, ?, ?, ?, ?, ?)", user.TelegramID, user.MensaEmail, user.FirstName, user.LastName, user.MemberNumber, user.IsBotAdmin, user.IsInternational)
 	if err != nil {
 		log.Printf("[POST /members] Error inserting user: %v", err)
 		c.JSON(500, gin.H{"error": err.Error()})
@@ -138,7 +184,7 @@ func updateMember(c *gin.Context) {
 		return
 	}
 
-	_, err := db.Exec("UPDATE users SET mensa_email=?, first_name=?, last_name=?, member_number=? WHERE telegram_id=?", user.MensaEmail, user.FirstName, user.LastName, user.MemberNumber, id)
+	_, err := db.Exec("UPDATE users SET mensa_email=?, first_name=?, last_name=?, member_number=?, is_bot_admin=?, is_international=? WHERE telegram_id=?", user.MensaEmail, user.FirstName, user.LastName, user.MemberNumber, user.IsBotAdmin, user.IsInternational, id)
 	if err != nil {
 		log.Printf("[PUT /members/:id] Error updating user: %v", err)
 		c.JSON(500, gin.H{"error": err.Error()})
@@ -165,7 +211,7 @@ func deleteMember(c *gin.Context) {
 func getMemberByEmail(c *gin.Context) {
 	var user model.User
 	email := c.Param("email")
-	err := db.QueryRow("SELECT * FROM users WHERE mensa_email=?", email).Scan(&user.TelegramID, &user.MensaEmail, &user.FirstName, &user.LastName, &user.MemberNumber)
+	err := db.QueryRow("SELECT * FROM users WHERE mensa_email=?", email).Scan(&user.TelegramID, &user.MensaEmail, &user.FirstName, &user.LastName, &user.MemberNumber, &user.IsBotAdmin, &user.IsInternational)
 	if err != nil {
 		log.Printf("[GET /members/email/:email] User not found: %v", err)
 		c.JSON(404, gin.H{"error": "User not found"})

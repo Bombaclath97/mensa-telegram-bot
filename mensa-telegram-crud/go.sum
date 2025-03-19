@@ -1,5 +1,9 @@
 git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250317112607-decd2f932199 h1:eNk5C48X8trOQxqGAkzoZniu4649rrDIVMXVo86F/aU=
 git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250317112607-decd2f932199/go.mod h1:Abd9Lo7Wo+6BAQl9prhtNGVJmORzRRMOAG/n4MyP4As=
+git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250319102946-31d53dff9ee3 h1:hg+Hwf3a5DK33snsYhJ6xTqud392uamcUdm8rNfyn0M=
+git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250319102946-31d53dff9ee3/go.mod h1:Abd9Lo7Wo+6BAQl9prhtNGVJmORzRRMOAG/n4MyP4As=
+git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250319134855-838d2d8978cd h1:zDn2EiVSYbM2BNeGEwoKhTt7zSx+usH5fuQCYwJ6bWc=
+git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250319134855-838d2d8978cd/go.mod h1:Abd9Lo7Wo+6BAQl9prhtNGVJmORzRRMOAG/n4MyP4As=
 github.com/Bombaclath97/bomba-go-utils v0.0.0-20250315120750-ca551e87b44a h1:+KhnfzubUlkK/YTj8adkmRCGhl+0ckza8QQUHwFKLJ4=
 github.com/Bombaclath97/bomba-go-utils v0.0.0-20250315120750-ca551e87b44a/go.mod h1:7iddpBiTsEg1Jb9sR/7eTKXjl59W1redYjUcqzdI0e4=
 github.com/bytedance/sonic v1.13.1 h1:Jyd5CIvdFnkOWuKXr+wm4Nyk2h0yAFsr8ucJgEasO3g=

@@ -52,7 +52,7 @@ func GetMember(userID int64) (model.User, error) {
 	return user, nil
 }
 
-func RegisterMember(userID int64, user model.User) int {
+func RegisterMember(user model.User) int {
 	reqBody, err := json.Marshal(user)
 	if err != nil {
 		log.Printf("ERROR: Failed to marshal user: %v", err)
@@ -231,4 +231,9 @@ func GetAllMembers() []model.User {
 	}
 
 	return users
+}
+
+func IsUserBotAdministrator(userId int64) bool {
+	user, _ := GetMember(userId)
+	return user.IsBotAdmin
 }
