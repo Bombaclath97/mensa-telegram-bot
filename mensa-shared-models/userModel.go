@@ -6,4 +6,5 @@ type User struct {
 	FirstName    string `json:"firstName"`
 	LastName     string `json:"lastName"`
 	MemberNumber int64  `json:"memberNumber"`
+	IsBotAdmin   bool   `json:"isBotAdmin"`
 }
