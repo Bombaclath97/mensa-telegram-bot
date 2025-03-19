@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/Bombaclath97/bomba-go-utils/logger"
 	"github.com/gin-gonic/gin"
@@ -33,21 +34,23 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	opts := []bot.Option{
-		bot.WithDefaultHandler(onMessage),
-	}
-
-	b, err := bot.New(os.Getenv("BOT_TOKEN"), opts...)
+	b, err := bot.New(os.Getenv("BOT_TOKEN"))
 	if err != nil {
 		log.Fatalf("failed to create bot: %v", err)
 	}
 
 	b.RegisterHandlerMatchFunc(matchJoinRequest, onChatJoinRequest)
+	b.RegisterHandlerMatchFunc(matchMessageReceivedInChat, onMessage)
+
+	// Publicly available commands
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, startHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/profilo", bot.MatchTypeExact, profileHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/approva", bot.MatchTypeExact, approveHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/app", bot.MatchTypeExact, appHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/elimina", bot.MatchTypeExact, deleteHandler)
+
+	// Administration panel
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/manual_add", bot.MatchTypeExact, manualAddHandler)
 
 	b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
 		Commands: []models.BotCommand{
@@ -91,6 +94,12 @@ func main() {
 
 func matchJoinRequest(update *models.Update) bool {
 	return update.ChatJoinRequest != nil
+}
+
+func matchMessageReceivedInChat(update *models.Update) bool {
+	return update.Message != nil &&
+		update.Message.Chat.Type == models.ChatTypePrivate &&
+		(!strings.HasPrefix(update.Message.Text, "/") || update.Message.Text == "/cancel")
 }
 
 type callmeApi struct {

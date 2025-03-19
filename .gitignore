@@ -176,3 +176,5 @@ dist
 .svelte-kit
 
 git-crypt-key
+
+*.db

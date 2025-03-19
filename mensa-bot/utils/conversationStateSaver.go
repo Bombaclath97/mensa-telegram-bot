@@ -10,22 +10,35 @@ const (
 	ASKED_SURNAME
 	ASKED_CONFIRMATION_CODE
 	ASKED_DELETE_CONFIRMATION
+	MANUAL_ASK_USER_ID
+	MANUAL_ASK_EMAIL
+	MANUAL_ASK_MEMBER_NUMBER
+	MANUAL_ASK_NAME
+	MANUAL_ASK_SURNAME
 )
 
 type ConversationStateSaver map[int64]int
 
 func (c *ConversationStateSaver) SetState(userID int64, state int) {
+	if *c == nil {
+		*c = make(map[int64]int)
+	}
 	(*c)[userID] = state
 }
 
 func (c *ConversationStateSaver) GetState(userID int64) int {
+	if *c == nil {
+		return IDLE
+	}
 	state, ok := (*c)[userID]
 	if !ok {
-		return -1
+		return IDLE
 	}
 	return state
 }
 
 func (c *ConversationStateSaver) RemoveState(userID int64) {
-	delete(*c, userID)
+	if *c != nil {
+		delete(*c, userID)
+	}
 }
