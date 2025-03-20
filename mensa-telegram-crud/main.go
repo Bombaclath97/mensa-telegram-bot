@@ -35,10 +35,14 @@ func initDB() {
 		is_international BOOLEAN DEFAULT FALSE
 	);
 	CREATE TABLE IF NOT EXISTS groups (
+		group_id INTEGER PRIMARY KEY
+	);
+	CREATE TABLE IF NOT EXISTS groups_associations (
 	    user_id INTEGER NOT NULL,
 		group_id INTEGER NOT NULL,
 		is_group_admin BOOLEAN DEFAULT FALSE,
-		FOREIGN KEY(user_id) REFERENCES users(telegram_id) ON DELETE CASCADE ON UPDATE CASCADE
+	    FOREIGN KEY(user_id) REFERENCES users(telegram_id) ON DELETE CASCADE ON UPDATE CASCADE,
+		FOREIGN KEY(group_id) REFERENCES groups(group_id) ON DELETE CASCADE ON UPDATE CASCADE
 	);
 	`
 
@@ -108,12 +112,74 @@ func main() {
 
 	r.GET("/members/email/:email", getMemberByEmail)
 
-	r.GET("/groups/:id", getAllGroups)
-	r.GET("/groups/:id/:group", getIsMemberInGroup)
-	r.POST("/groups", createGroupAssociation)
-	r.DELETE("/groups/:id", deleteAllGroup)
+	r.GET("/groups", getAllGroups)
+	r.POST("/groups", createGroup)
+	r.DELETE("/groups/:id", deleteGroup)
+
+	r.GET("/groups/associations/:id", getAllGroupAssociations)
+	r.GET("/groups/associations/:id/:group", getIsMemberInGroup)
+	r.POST("/groups/associations", createGroupAssociation)
+	r.DELETE("/groups/associations/:id", deleteAllGroupAssociations)
 
 	r.Run()
+}
+
+func getAllGroups(c *gin.Context) {
+	var groups []model.Group
+
+	rows, err := db.Query("SELECT * FROM groups")
+	if err != nil {
+		log.Printf("[GET /groups] Error getting groups: %v", err)
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var group model.Group
+		err := rows.Scan(&group.GroupID)
+		if err != nil {
+			log.Printf("[GET /groups] Error scanning groups: %v", err)
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+		groups = append(groups, group)
+	}
+
+	log.Printf("[GET /groups] Groups found: %v", groups)
+	c.JSON(200, groups)
+}
+
+func createGroup(c *gin.Context) {
+	var group model.Group
+	if err := c.ShouldBindJSON(&group); err != nil {
+		log.Printf("[POST /groups] Body not valid: %v", err)
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	_, err := db.Exec("INSERT INTO groups (group_id) VALUES (?)", group.GroupID)
+	if err != nil {
+		log.Printf("[POST /groups] Error inserting group: %v", err)
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	log.Printf("[POST /groups] Group created successfully: %v", group)
+	c.JSON(201, group)
+}
+
+func deleteGroup(c *gin.Context) {
+	id := c.Param("id")
+	_, err := db.Exec("DELETE FROM groups WHERE group_id=?", id)
+	if err != nil {
+		log.Printf("[DELETE /groups/:id] Error deleting group: %v", err)
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	log.Printf("[DELETE /groups/:id] Group deleted")
+	c.JSON(200, gin.H{"message": "Group deleted"})
 }
 
 func getMember(c *gin.Context) {
@@ -222,84 +288,84 @@ func getMemberByEmail(c *gin.Context) {
 	c.JSON(200, user)
 }
 
-func getAllGroups(c *gin.Context) {
-	var groups []model.Group
+func getAllGroupAssociations(c *gin.Context) {
+	var groupAssociations []model.GroupAssociations
 	id := c.Param("id")
 
 	rows, err := db.Query("SELECT group_id FROM groups WHERE user_id=?", id)
 	if err != nil {
-		log.Printf("[GET /groups/:id] Error getting groups: %v", err)
+		log.Printf("[GET /groups/associations/:id] Error getting groups: %v", err)
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var group model.Group
-		err := rows.Scan(&group.GroupID)
+		var groupAssociation model.GroupAssociations
+		err := rows.Scan(&groupAssociation.GroupID)
 		if err != nil {
-			log.Printf("[GET /groups/:id] Error scanning groups: %v", err)
+			log.Printf("[GET /groups/associations/:id] Error scanning groups: %v", err)
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
-		groups = append(groups, group)
+		groupAssociations = append(groupAssociations, groupAssociation)
 	}
 
-	log.Printf("[GET /groups/:id] Groups found: %v", groups)
-	c.JSON(200, groups)
+	log.Printf("[GET /groups/associations/:id] Groups found: %v", groupAssociations)
+	c.JSON(200, groupAssociations)
 }
 
 func getIsMemberInGroup(c *gin.Context) {
 	id := c.Param("id")
-	group := c.Param("group")
+	groupAssociation := c.Param("group")
 
-	rows, err := db.Query("SELECT * FROM groups WHERE user_id=? AND group_id=?", id, group)
+	rows, err := db.Query("SELECT * FROM groups WHERE user_id=? AND group_id=?", id, groupAssociation)
 	if err != nil {
-		log.Printf("[GET /groups/:id/:group] Error getting information about membership: %v", err)
+		log.Printf("[GET /groups/associations/:id/:group] Error getting information about membership: %v", err)
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
 
 	if rows.Next() {
-		log.Printf("[GET /groups/:id/:group] User is member of group")
+		log.Printf("[GET /groups/associations/:id/:group] User is member of group")
 		c.JSON(200, gin.H{"isMember": true})
 		return
 	} else {
-		log.Printf("[GET /groups/:id/:group] User is not member of group")
+		log.Printf("[GET /groups/associations/:id/:group] User is not member of group")
 		c.JSON(404, gin.H{"isMember": false})
 		return
 	}
 }
 
 func createGroupAssociation(c *gin.Context) {
-	var group model.Group
-	if err := c.ShouldBindJSON(&group); err != nil {
-		log.Printf("[POST /groups] Body not valid: %v", err)
+	var groupAssociation model.GroupAssociations
+	if err := c.ShouldBindJSON(&groupAssociation); err != nil {
+		log.Printf("[POST /groups/associations] Body not valid: %v", err)
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
-	_, err := db.Exec("INSERT INTO groups (user_id, group_id) VALUES (?, ?)", group.UserID, group.GroupID)
+	_, err := db.Exec("INSERT INTO groups (user_id, group_id) VALUES (?, ?)", groupAssociation.UserID, groupAssociation.GroupID)
 	if err != nil {
-		log.Printf("[POST /groups] Error inserting group association: %v", err)
+		log.Printf("[POST /groups/associations] Error inserting group association: %v", err)
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	log.Printf("[POST /groups] Group association created successfully: %v", group)
-	c.JSON(201, group)
+	log.Printf("[POST /groups/associations] Group association created successfully: %v", groupAssociation)
+	c.JSON(201, groupAssociation)
 }
 
-func deleteAllGroup(c *gin.Context) {
+func deleteAllGroupAssociations(c *gin.Context) {
 	id := c.Param("id")
 	_, err := db.Exec("DELETE FROM groups WHERE user_id=?", id)
 	if err != nil {
-		log.Printf("[DELETE /groups/:id] Error deleting groups associated with user %s: %v", id, err)
+		log.Printf("[DELETE /groups/associations/:id] Error deleting groups associated with user %s: %v", id, err)
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	log.Printf("[DELETE /groups/:id] Groups deleted for user %s", id)
+	log.Printf("[DELETE /groups/associations/:id] Groups deleted for user %s", id)
 	c.JSON(200, gin.H{"message": "Groups deleted"})
 }

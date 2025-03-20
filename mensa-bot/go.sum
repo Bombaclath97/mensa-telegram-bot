@@ -2,10 +2,10 @@ git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-202
 git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250317112607-decd2f932199/go.mod h1:Abd9Lo7Wo+6BAQl9prhtNGVJmORzRRMOAG/n4MyP4As=
 git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250317225757-1a8af07e60fe h1:ySu6DhlQmrJOHiZ5XUPAirXCjikAu9K/jkFKYitkqFg=
 git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250317225757-1a8af07e60fe/go.mod h1:Abd9Lo7Wo+6BAQl9prhtNGVJmORzRRMOAG/n4MyP4As=
-git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250319102946-31d53dff9ee3 h1:hg+Hwf3a5DK33snsYhJ6xTqud392uamcUdm8rNfyn0M=
-git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250319102946-31d53dff9ee3/go.mod h1:Abd9Lo7Wo+6BAQl9prhtNGVJmORzRRMOAG/n4MyP4As=
-git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250319134855-838d2d8978cd h1:zDn2EiVSYbM2BNeGEwoKhTt7zSx+usH5fuQCYwJ6bWc=
-git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250319134855-838d2d8978cd/go.mod h1:Abd9Lo7Wo+6BAQl9prhtNGVJmORzRRMOAG/n4MyP4As=
+git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250320214312-6338666351d9 h1:9LYP5QQiAYcCAa3mMYcoL4S8DKvhUVumADVZhdjmQew=
+git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250320214312-6338666351d9/go.mod h1:Abd9Lo7Wo+6BAQl9prhtNGVJmORzRRMOAG/n4MyP4As=
+git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250320215311-ba1f117611a2 h1:y0nzZuDNZvpL4QzlRJrJuxp5y9SIqZ6TrSDcU5yeeCo=
+git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250320215311-ba1f117611a2/go.mod h1:Abd9Lo7Wo+6BAQl9prhtNGVJmORzRRMOAG/n4MyP4As=
 github.com/Bombaclath97/bomba-go-utils v0.0.0-20250315120750-ca551e87b44a h1:+KhnfzubUlkK/YTj8adkmRCGhl+0ckza8QQUHwFKLJ4=
 github.com/Bombaclath97/bomba-go-utils v0.0.0-20250315120750-ca551e87b44a/go.mod h1:7iddpBiTsEg1Jb9sR/7eTKXjl59W1redYjUcqzdI0e4=
 github.com/bytedance/sonic v1.13.1 h1:Jyd5CIvdFnkOWuKXr+wm4Nyk2h0yAFsr8ucJgEasO3g=

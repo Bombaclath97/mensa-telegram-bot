@@ -145,7 +145,7 @@ func IsMembershipActive(intMembership int64) bool {
 }
 
 func RegisterGroupForUser(userId, chatId int64) int {
-	group := model.Group{
+	group := model.GroupAssociations{
 		GroupID: int(chatId),
 		UserID:  int(userId),
 	}
@@ -156,7 +156,7 @@ func RegisterGroupForUser(userId, chatId int64) int {
 		return http.StatusInternalServerError
 	}
 
-	resp, err := http.Post(fmt.Sprintf("http://%s/groups", crudEndpoint), "application/json", bytes.NewReader(reqBody))
+	resp, err := http.Post(fmt.Sprintf("http://%s/groups/associations", crudEndpoint), "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		log.Printf("ERROR: Failed to register group for user: %v", err)
 		return http.StatusInternalServerError
@@ -166,8 +166,8 @@ func RegisterGroupForUser(userId, chatId int64) int {
 	return resp.StatusCode
 }
 
-func GetGroupsForUser(userId int64) ([]model.Group, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%s/groups/%d", crudEndpoint, userId))
+func GetGroupsForUser(userId int64) ([]model.GroupAssociations, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%s/groups/associations/%d", crudEndpoint, userId))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get groups for user: %w", err)
 	}
@@ -182,7 +182,7 @@ func GetGroupsForUser(userId int64) ([]model.Group, error) {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var groups []model.Group
+	var groups []model.GroupAssociations
 	err = json.Unmarshal(body, &groups)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response body: %w", err)
@@ -236,4 +236,25 @@ func GetAllMembers() []model.User {
 func IsUserBotAdministrator(userId int64) bool {
 	user, _ := GetMember(userId)
 	return user.IsBotAdmin
+}
+
+func RegisterBotGroup(chatId int64) int {
+	group := model.Group{
+		GroupID: int(chatId),
+	}
+
+	reqBody, err := json.Marshal(group)
+	if err != nil {
+		log.Printf("ERROR: Failed to marshal group: %v", err)
+		return http.StatusInternalServerError
+	}
+
+	resp, err := http.Post(fmt.Sprintf("http://%s/groups/", crudEndpoint), "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		log.Printf("ERROR: Failed to register group for user: %v", err)
+		return http.StatusInternalServerError
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode
 }
