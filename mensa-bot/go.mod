@@ -3,7 +3,7 @@ module git.bombaclath.cc/bombadurelli/mensa-bot-telegram/bot
 go 1.24.1
 
 require (
-	git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250317225757-1a8af07e60fe
+	git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models v0.0.0-20250320215311-ba1f117611a2
 	github.com/go-telegram/bot v1.14.1
 	github.com/joho/godotenv v1.5.1
 )

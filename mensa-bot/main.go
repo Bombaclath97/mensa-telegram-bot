@@ -43,6 +43,9 @@ func main() {
 	}
 
 	b.RegisterHandlerMatchFunc(matchJoinRequest, onChatJoinRequest)
+	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
+		return matchBotJoinsGroup(update, b, ctx)
+	}, onBotJoinsGroup)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, startHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/profilo", bot.MatchTypeExact, profileHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/approva", bot.MatchTypeExact, approveHandler)
@@ -91,6 +94,18 @@ func main() {
 
 func matchJoinRequest(update *models.Update) bool {
 	return update.ChatJoinRequest != nil
+}
+
+func matchBotJoinsGroup(update *models.Update, b *bot.Bot, ctx context.Context) bool {
+	botUser, _ := b.GetMe(ctx)
+	if update.Message != nil && update.Message.NewChatMembers != nil {
+		for _, user := range update.Message.NewChatMembers {
+			if user.ID == botUser.ID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type callmeApi struct {

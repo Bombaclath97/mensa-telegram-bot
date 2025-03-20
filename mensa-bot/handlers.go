@@ -387,3 +387,9 @@ func cleanupRoutine(ctx *gin.Context, b *bot.Bot) {
 	log.Printf("INFO: cleanup routine completed in %s", timeElapsed)
 	ctx.JSON(200, gin.H{"message": "Routine completata"})
 }
+
+func onBotJoinsGroup(ctx context.Context, b *bot.Bot, update *models.Update) {
+	chatId := update.Message.Chat.ID
+	utils.RegisterBotGroup(chatId)
+	utils.SendMessage(b, ctx, chatId, tolgee.GetTranslation("telegrambot.welcome.botjoined", "it"))
+}
