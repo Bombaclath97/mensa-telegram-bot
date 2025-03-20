@@ -33,12 +33,12 @@ func initDB() {
 		member_number INTEGER NOT NULL
 	);
 	CREATE TABLE IF NOT EXISTS groups (
-		group_id INTEGER PRIMARY KEY,
+		group_id INTEGER PRIMARY KEY
 	);
 	CREATE TABLE IF NOT EXISTS groups_associations (
 	    user_id INTEGER NOT NULL,
 		group_id INTEGER NOT NULL,
-	    FOREIGN KEY(user_id) REFERENCES users(telegram_id) ON DELETE CASCADE ON UPDATE CASCADE
+	    FOREIGN KEY(user_id) REFERENCES users(telegram_id) ON DELETE CASCADE ON UPDATE CASCADE,
 		FOREIGN KEY(group_id) REFERENCES groups(group_id) ON DELETE CASCADE ON UPDATE CASCADE
 	);
 	`
