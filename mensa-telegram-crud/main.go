@@ -293,7 +293,7 @@ func getAllGroupAssociations(c *gin.Context) {
 	var groupAssociations []model.GroupAssociations
 	id := c.Param("id")
 
-	rows, err := db.Query("SELECT group_id FROM groups WHERE user_id=?", id)
+	rows, err := db.Query("SELECT group_id FROM groups_associations WHERE user_id=?", id)
 	if err != nil {
 		log.Printf("[GET /groups/associations/:id] Error getting groups: %v", err)
 		c.JSON(500, gin.H{"error": err.Error()})
