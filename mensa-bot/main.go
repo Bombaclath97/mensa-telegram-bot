@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/Bombaclath97/bomba-go-utils/logger"
 	"github.com/gin-gonic/gin"
@@ -16,9 +17,9 @@ import (
 )
 
 var requestsToApprove = utils.RequestsToApprove{}
-var conversationStateSaver = utils.ConversationStateSaver{}
 var intermediateUserSaver = utils.IntermediateUserSaver{}
 var lockedUsers = utils.LockedUsers{}
+var conversationStateSaver = utils.NewConversationStateSaver()
 
 var log = logger.Configure("mensa-bot")
 
@@ -33,16 +34,15 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	opts := []bot.Option{
-		bot.WithDefaultHandler(onMessage),
-	}
-
-	b, err := bot.New(os.Getenv("BOT_TOKEN"), opts...)
+	b, err := bot.New(os.Getenv("BOT_TOKEN"))
 	if err != nil {
 		log.Fatalf("failed to create bot: %v", err)
 	}
 
 	b.RegisterHandlerMatchFunc(matchJoinRequest, onChatJoinRequest)
+	b.RegisterHandlerMatchFunc(matchMessageReceivedInChat, onMessage)
+
+	// Publicly available commands
 	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
 		return matchBotJoinsGroup(update, b, ctx)
 	}, onBotJoinsGroup)
@@ -51,6 +51,9 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/approva", bot.MatchTypeExact, approveHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/app", bot.MatchTypeExact, appHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/elimina", bot.MatchTypeExact, deleteHandler)
+
+	// Administration panel
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/manual_add", bot.MatchTypeExact, manualAddHandler)
 
 	b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
 		Commands: []models.BotCommand{
@@ -94,6 +97,12 @@ func main() {
 
 func matchJoinRequest(update *models.Update) bool {
 	return update.ChatJoinRequest != nil
+}
+
+func matchMessageReceivedInChat(update *models.Update) bool {
+	return update.Message != nil &&
+		update.Message.Chat.Type == models.ChatTypePrivate &&
+		(!strings.HasPrefix(update.Message.Text, "/") || update.Message.Text == "/cancel")
 }
 
 func matchBotJoinsGroup(update *models.Update, b *bot.Bot, ctx context.Context) bool {
