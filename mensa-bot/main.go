@@ -17,9 +17,9 @@ import (
 )
 
 var requestsToApprove = utils.RequestsToApprove{}
-var conversationStateSaver = utils.ConversationStateSaver{}
 var intermediateUserSaver = utils.IntermediateUserSaver{}
 var lockedUsers = utils.LockedUsers{}
+var conversationStateSaver = utils.NewConversationStateSaver()
 
 var log = logger.Configure("mensa-bot")
 
