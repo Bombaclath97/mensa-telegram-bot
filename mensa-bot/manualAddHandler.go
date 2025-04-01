@@ -16,9 +16,3 @@ func manualAddHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 	conversationStateSaver.SetState(userId, utils.MANUAL_ASK_USER_ID)
 }
-
-func onBotJoinsGroup(ctx context.Context, b *bot.Bot, update *models.Update) {
-	chatId := update.Message.Chat.ID
-	utils.RegisterBotGroup(chatId)
-	utils.SendMessage(b, ctx, chatId, tolgee.GetTranslation("telegrambot.welcome.botjoined", "it"))
-}
