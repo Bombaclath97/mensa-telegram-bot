@@ -52,7 +52,7 @@ func GetMember(userID int64) (model.User, error) {
 	return user, nil
 }
 
-func RegisterMember(userID int64, user model.User) int {
+func RegisterMember(user model.User) int {
 	reqBody, err := json.Marshal(user)
 	if err != nil {
 		log.Printf("ERROR: Failed to marshal user: %v", err)
@@ -233,6 +233,11 @@ func GetAllMembers() []model.User {
 	return users
 }
 
+func IsUserBotAdministrator(userId int64) bool {
+	user, _ := GetMember(userId)
+	return user.IsBotAdmin
+}
+
 func RegisterBotGroup(chatId int64) int {
 	group := model.Group{
 		GroupID: int(chatId),
@@ -245,6 +250,24 @@ func RegisterBotGroup(chatId int64) int {
 	}
 
 	resp, err := http.Post(fmt.Sprintf("http://%s/groups/", crudEndpoint), "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		log.Printf("ERROR: Failed to register group for user: %v", err)
+		return http.StatusInternalServerError
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode
+}
+
+func RegisterGroupAdmin(userId, chatId int64) int {
+	req, err := http.NewRequest("PUT",
+		fmt.Sprintf("http://%s/groups/associations/%d/%d/promote", crudEndpoint, userId, chatId), nil)
+	if err != nil {
+		log.Printf("ERROR: Failed to register group for user: %v", err)
+		return http.StatusInternalServerError
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("ERROR: Failed to register group for user: %v", err)
 		return http.StatusInternalServerError

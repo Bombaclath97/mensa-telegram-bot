@@ -3,6 +3,7 @@ package utils
 import model "git.bombaclath.cc/bombadurelli/mensa-bot-telegram/mensa-shared-models"
 
 type intermediateUser struct {
+	userId           int64
 	firstName        string
 	lastName         string
 	email            string
@@ -55,6 +56,23 @@ func (i *IntermediateUserSaver) SetConfirmationCode(userID int64, code string) {
 	}
 	user.confirmationCode = code
 	(*i)[userID] = user
+}
+
+func (i *IntermediateUserSaver) SetUserId(userID, toSave int64) {
+	user, exist := (*i)[userID]
+	if !exist {
+		user = intermediateUser{}
+	}
+	user.userId = toSave
+	(*i)[userID] = user
+}
+
+func (i *IntermediateUserSaver) GetUserId(userID int64) int64 {
+	user, exists := (*i)[userID]
+	if !exists {
+		return -1
+	}
+	return user.userId
 }
 
 func (i *IntermediateUserSaver) GetFirstName(userID int64) string {
