@@ -119,6 +119,7 @@ func main() {
 	r.GET("/groups/associations/:id", getAllGroupAssociations)
 	r.GET("/groups/associations/:id/:group", getIsMemberInGroup)
 	r.POST("/groups/associations", createGroupAssociation)
+	r.PUT("/groups/associations/:id/:group/promote", promoteGroupAssociation)
 	r.DELETE("/groups/associations/:id", deleteAllGroupAssociations)
 
 	r.Run()
@@ -368,4 +369,19 @@ func deleteAllGroupAssociations(c *gin.Context) {
 
 	log.Printf("[DELETE /groups/associations/:id] Groups deleted for user %s", id)
 	c.JSON(200, gin.H{"message": "Groups deleted"})
+}
+
+func promoteGroupAssociation(c *gin.Context) {
+	id := c.Param("id")
+	groupAssociation := c.Param("group")
+
+	_, err := db.Exec("UPDATE groups SET is_group_admin=1 WHERE user_id=? AND group_id=?", id, groupAssociation)
+	if err != nil {
+		log.Printf("[PUT /groups/associations/:id/:group/promote] Error promoting group association: %v", err)
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	log.Printf("[PUT /groups/associations/:id/:group/promote] Group association promoted successfully: %s", groupAssociation)
+	c.JSON(200, gin.H{"message": "Group association promoted"})
 }
