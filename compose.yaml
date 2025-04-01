@@ -8,6 +8,8 @@ services:
     depends_on:
       - crud
     restart: always
+    volumes:
+      - ./certs:/usr/local/bin/certs
 
   crud:
     build: ./mensa-telegram-crud
@@ -15,6 +17,9 @@ services:
     env_file: ./mensa-telegram-crud/.env
     ports:
       - "8082:8080"
+    restart: always
     volumes:
       - ./mensa-telegram-crud/mensa-telegram.db:/app/mensa-telegram.db
-    restart: always
+      - type: bind
+        source: ./mensa-telegram-crud/mensa-telegram.db
+        target: /app/mensa-telegram.db

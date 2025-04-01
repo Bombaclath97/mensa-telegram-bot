@@ -258,3 +258,21 @@ func RegisterBotGroup(chatId int64) int {
 
 	return resp.StatusCode
 }
+
+func RegisterGroupAdmin(userId, chatId int64) int {
+	req, err := http.NewRequest("PUT",
+		fmt.Sprintf("http://%s/groups/associations/%d/%d/promote", crudEndpoint, userId, chatId), nil)
+	if err != nil {
+		log.Printf("ERROR: Failed to register group for user: %v", err)
+		return http.StatusInternalServerError
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("ERROR: Failed to register group for user: %v", err)
+		return http.StatusInternalServerError
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode
+}
