@@ -43,26 +43,28 @@ func profileHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 			return
 		}
 
-		groupsToSend := make([]string, len(groups))
+		if len(groups) > 0 {
+			groupsToSend := make([]string, len(groups))
 
-		for _, group := range groups {
-			groupName, _ := b.GetChat(ctx, &bot.GetChatParams{
-				ChatID: group.GroupID,
-			})
+			for _, group := range groups {
+				groupName, _ := b.GetChat(ctx, &bot.GetChatParams{
+					ChatID: group.GroupID,
+				})
 
-			line := fmt.Sprintf("- %s", groupName.Title)
+				line := fmt.Sprintf("- %s", groupName.Title)
 
-			if group.IsGroupAdmin {
-				line += " (sei anche admin)"
+				if group.IsGroupAdmin {
+					line += " (sei anche admin)"
+				}
+
+				groupsToSend = append(groupsToSend, line)
 			}
 
-			groupsToSend = append(groupsToSend, line)
-		}
+			paramMap = map[string]string{
+				"groupList": fmt.Sprintf("\n%s", groupsToSend),
+			}
 
-		paramMap = map[string]string{
-			"groupList": fmt.Sprintf("\n%s", groupsToSend),
+			utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.profilecommand.showgroups", "it", paramMap))
 		}
-
-		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.profilecommand.showgroups", "it", paramMap))
 	}
 }
