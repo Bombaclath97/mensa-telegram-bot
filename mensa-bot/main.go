@@ -34,7 +34,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	b, err := bot.New(os.Getenv("BOT_TOKEN"))
+	b, err := bot.New(os.Getenv("BOT_TOKEN"), bot.Option(bot.WithDefaultHandler(noopHandler)))
 	if err != nil {
 		log.Fatalf("failed to create bot: %v", err)
 	}
@@ -92,6 +92,10 @@ func main() {
 	// Wait for the context to be cancelled
 	<-ctx.Done()
 	log.Println("Shutting down gracefully, press Ctrl+C again to force")
+}
+
+func noopHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// No operation handler, does nothing
 }
 
 func matchJoinRequest(update *models.Update) bool {

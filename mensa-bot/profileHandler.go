@@ -60,7 +60,7 @@ func profileHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		}
 
 		paramMap = map[string]string{
-			"groups": fmt.Sprintf("\n%s", groupsToSend),
+			"groupList": fmt.Sprintf("\n%s", groupsToSend),
 		}
 
 		utils.SendMessage(b, ctx, userId, tolgee.GetTranslation("telegrambot.profilecommand.showgroups", "it", paramMap))
