@@ -39,7 +39,7 @@ func postCallmeAPI(ctx *gin.Context, b *bot.Bot) {
 			ctx.JSON(200, gin.H{"message": "Utente sbloccato"})
 		} else {
 			log.Printf("ERROR: Couldn't unlock user %s. Received full-token %s", userId, fullToken)
-			ctx.JSON(400, gin.H{"message": "Errore"})
+			ctx.JSON(200, gin.H{"message": "Errore"})
 		}
 	} else {
 		log.Printf("INFO: User %s rejected the API call!", userId)
