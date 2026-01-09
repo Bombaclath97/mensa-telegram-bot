@@ -99,6 +99,36 @@ func GetTranslation(key string, lang string, namedArgs ...map[string]string) str
 		}
 		return translationToUse
 	} else {
+		// Fallback: try to get translation from CDN cache
+		if cdnTranslation := getTranslationFromCDN(key, existinglangauge, namedArgs...); cdnTranslation != key {
+			return cdnTranslation
+		}
 		return key
 	}
+}
+
+func getTranslationFromCDN(key string, lang string, namedArgs ...map[string]string) string {
+	cdnURL := "https://cdn.tolg.ee/6b648d1efa05ed4f9ee10ba36ac4e6d6/" + lang + ".json"
+	
+	response, err := resty.New().R().Get(cdnURL)
+	if err != nil {
+		return key
+	}
+	
+	var cdnTranslations map[string]string
+	if err := json.Unmarshal(response.Body(), &cdnTranslations); err != nil {
+		return key
+	}
+	
+	if translation, ok := cdnTranslations[key]; ok {
+		translationToUse := translation
+		if len(namedArgs) > 0 {
+			for k, v := range namedArgs[0] {
+				translationToUse = strings.ReplaceAll(translationToUse, "{"+k+"}", v)
+			}
+		}
+		return translationToUse
+	}
+	
+	return key
 }
