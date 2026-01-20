@@ -113,7 +113,7 @@ func matchBotJoinsGroup(update *models.Update) bool {
 }
 
 func matchBotBecomesAdmin(update *models.Update) bool {
-	return update.MyChatMember != nil && update.MyChatMember.NewChatMember.Administrator.Status == models.ChatMemberTypeAdministrator
+	return update.MyChatMember != nil && update.MyChatMember.NewChatMember.Administrator.Status == models.ChatMemberTypeAdministratorx
 }
 
 type callmeApi struct {
