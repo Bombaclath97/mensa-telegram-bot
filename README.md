@@ -1,33 +1,153 @@
 # Mensa Bot Telegram
 
-Mensa Bot Telegram è un bot per Telegram che permette agli utenti di registrarsi e gestire il proprio profilo per essere approvati in tutti i gruppi di Mensa.
+A Telegram bot that gates the Mensa Italia Telegram groups. It lets a Mensa
+member prove their membership once, then auto-approves their join requests to
+every group the bot administers, keeps a member's profile, and periodically
+removes members whose membership has lapsed.
 
-## Installazione
+The bot supports Italian (default), English, Spanish and German; user-facing
+strings come from [Tolgee](https://tolgee.io), with a CDN and on-disk cache
+fallback so a translation outage never takes the bot down.
 
-1. Clona il repository:
+## Architecture
+
+This is a **single Go service** (module `github.com/Bombaclath97/mensa-telegram-bot`,
+one binary). It replaces the former three-part deployment (`mensa-bot` +
+`mensa-telegram-crud` + `mensa-shared-models`), all of which have been retired.
+
+The one process runs two things side by side under a shared, signal-cancelled
+context (SIGINT/SIGTERM → graceful shutdown):
+
+- **Telegram long-polling** — commands, callbacks, chat-join-request gating and
+  group membership events.
+- **An inbound HTTP server** (`HTTP_ADDR`, default `:8080`) exposing:
+  - `GET /health` — liveness probe (used by the Docker/compose healthcheck).
+  - `POST /callme_api/{token}` — the callback the official Mensa app calls to
+    approve or reject an identity-verification request.
+
+Persistence is a **plaintext SQLite database accessed directly via GORM**
+(`gorm.io/driver/sqlite`, cgo). There is no separate CRUD service and no
+HTTP/DB layer between the bot and its data. The schema is auto-migrated on boot.
+
+TLS is **not** handled by the service: it serves plain HTTP and is meant to sit
+behind a reverse proxy (nginx, Caddy, Traefik, …) that terminates TLS and
+forwards both the webhook path and the health check to `HTTP_ADDR`.
+
+```
+                 ┌──────────────────────────────────────────┐
+   Telegram  ◄──►│  mensa-bot (single Go binary)             │
+  (long poll)    │    • bot handlers  ─┐                     │
+                 │    • http server   ─┼─► GORM ─► SQLite    │
+ reverse proxy   │    • cleanup ticker ┘        (volume)     │
+  ──HTTP──►:8080 │                                           │
+ (/callme_api,   │    outbound ─► Mensa API, Tolgee          │
+  /health)       └──────────────────────────────────────────┘
+```
+
+## Registration & verification flow
+
+Membership is proven by a round-trip through the official Mensa app; the bot
+never trusts a self-declared email/number on its own.
+
+1. A user opens a private chat and runs `/profilo` (or `/start`) to begin the
+   registration wizard.
+2. The wizard collects the user's **@mensa.it email** and **membership number**.
+3. On submit the bot calls the Mensa API (`POST {API_ENDPOINT}/request`) with the
+   email, membership number and a one-time callback URL
+   (`{CALLME_BASE_URL}/{token}`). A 200 means the pair is a real member and a
+   push notification was sent to that member's Mensa app. The draft is locked in
+   an `AWAITING_APPROVAL` state (TTL `APPROVAL_TIMEOUT_MINUTES`).
+4. The member opens the Mensa app and approves (or rejects). The app calls back
+   `POST /callme_api/{token}` with `{"accepted": <bool>}`. The token must match
+   the locked draft on **both** branches, so no third party can approve or abort
+   someone else's registration.
+5. On approval the bot collects the member's real first and last name, writes the
+   verified user row, and the account is now a recognized member.
+6. From then on, any **join request** to a group the bot administers is
+   auto-approved for that member and the group association is recorded. If an
+   unregistered user requests to join, the bot DMs them to register first and
+   buffers the request; after they register, `/approva` (or the next automatic
+   pass) approves the buffered requests.
+
+International Mensa members without an `@mensa.it` address are added by a bot
+admin via the hidden `/manual_add` command, which bypasses the email/app check.
+
+A ticker-driven **cleanup sweep** (interval `CLEANUP_INTERVAL_HOURS`) checks each
+member against `POST {API_ENDPOINT}/valid`; expired members are warned, demoted /
+kicked from groups and deleted. The sweep ships **dry-run by default**
+(`CLEANUP_DRY_RUN=true`) and has circuit breakers (`CLEANUP_MAX_DELETIONS`,
+`CLEANUP_MAX_FRACTION`) so a misconfiguration cannot mass-remove the membership.
+
+## Commands
+
+Published to the Telegram command menu (per language) via `SetMyCommands`:
+
+| Command    | What it does                                                        |
+| ---------- | ------------------------------------------------------------------- |
+| `/start`   | Greeting; tells you whether you are registered.                     |
+| `/profilo` | Show your profile / groups, or start the registration wizard.       |
+| `/approva` | Approve your buffered join requests once you are registered.        |
+| `/app`     | Send the Mensa Italia app download links.                           |
+| `/elimina` | Delete your profile and remove you from every Mensa group.          |
+| `/lang`    | Choose your language (it / en / es / de).                           |
+| `/cancel`  | Abort an in-progress wizard.                                        |
+
+`/manual_add` exists but is **admin-only** and deliberately not advertised in the
+menu. Admins are seeded from `ADMIN_TELEGRAM_IDS`.
+
+## Configuration
+
+All configuration is via environment variables. See
+[`mensa-bot-refactor/ENVIRONMENT.md`](mensa-bot-refactor/ENVIRONMENT.md) for the
+exhaustive list and [`mensa-bot-refactor/.env.example`](mensa-bot-refactor/.env.example)
+for a template to copy. The essentials:
+
+| Variable             | Required | Description                                            |
+| -------------------- | -------- | ------------------------------------------------------ |
+| `BOT_TOKEN`          | yes      | Telegram bot token from [@BotFather](https://t.me/BotFather). |
+| `API_ENDPOINT`       | yes      | Base URL of the Mensa Italia membership API.           |
+| `API_BEARER_TOKEN`   | yes      | Bearer token for that API.                             |
+| `CALLME_BASE_URL`    | yes      | Public origin of this service + `/callme_api`.         |
+| `ADMIN_TELEGRAM_IDS` | no       | Comma-separated Telegram IDs flagged as bot admins.    |
+| `DB_PATH`            | no       | SQLite file (Docker default `/data/mensa-telegram.db`).|
+| `HTTP_ADDR`          | no       | Bind address (default `:8080`).                        |
+| `TOLGEE_API_KEY`     | no       | Tolgee project key for translations.                   |
+
+## Running
+
+### Docker Compose (recommended)
+
+1. Copy the env template and fill in the required values:
 
    ```sh
-   git clone https://git.bombaclath.cc/bombaclath97/mensa-bot-telegram.git
-   cd mensa-bot-telegram
+   cp mensa-bot-refactor/.env.example mensa-bot-refactor/.env
+   $EDITOR mensa-bot-refactor/.env
    ```
 
-2. Crea un file `env` nella directory `mensa-bot` e valorizza le seguenti variabili d'ambiente:
-   | Variabile        | Valore                                                                  |
-   | ---------------- | ----------------------------------------------------------------------- |
-   | TOKEN            | Il token generato da [@BotFather](https://t.me/BotFather)               |
-   | API_ENDPOINT     | L'endpoint da utilizzare per comunicare con la app di Mensa Italia      |
-   | API_BEARER_TOKEN | Il bearer token da utilizzare per comunicare con la app di Mensa Italia |
-   | GMAIL_USERNAME   | La mail google da utilizzare per mandare il codice di verifica          |
-   | GMAIL_PASSWORD   | La password da utilizzare per autenticarsi a google                     |
-
-3. Installa le dipendenze:
+2. Build and start the single service:
 
    ```sh
-   go mod tidy
+   docker compose up -d --build
    ```
 
-4. Avvia il bot:
+The SQLite database and the Tolgee cache live on the named `mensa-data` volume,
+so they survive container replacement. The `mensa-bot` service publishes port
+`8080`; point your reverse proxy at it and forward `/callme_api/…` and `/health`.
 
-   ```sh
-   go run mensa-bot/main.go
-   ```
+### Locally (development)
+
+Requires Go 1.25+ and a C toolchain (the SQLite driver is cgo, so
+`CGO_ENABLED=1`; it is on by default when gcc is present):
+
+```sh
+cd mensa-bot-refactor
+cp .env.example .env   # then fill it in
+go run .
+```
+
+## Translations
+
+Translation keys are documented in
+[`mensa-bot-refactor/TOLGEE_KEYS.md`](mensa-bot-refactor/TOLGEE_KEYS.md), which
+marks the keys that are new in this refactor and must exist in the Tolgee project
+(in it / en / es / de) — the bot renders a raw dotted key for anything missing.

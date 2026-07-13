@@ -1,25 +1,27 @@
 services:
-  bot:
-    build: ./mensa-bot
+  # Single service replacing the legacy bot + crud pair. Serves plain HTTP behind
+  # a reverse proxy that terminates TLS; the SQLite database lives on a named volume.
+  mensa-bot:
+    build: ./mensa-bot-refactor
     container_name: mensa-bot
-    env_file: ./mensa-bot/.env
+    env_file: ./mensa-bot-refactor/.env
+    environment:
+      # Keep state on the mounted volume regardless of what .env says.
+      DB_PATH: /data/mensa-telegram.db
+      TOLGEE_CACHE_PATH: /data/tolgee-cache.json
+      HTTP_ADDR: ":8080"
     ports:
-      - "3000:8080"
-    depends_on:
-      - crud
-    restart: always
+      # host:container — publish the plain-HTTP port for the reverse proxy.
+      - "8080:8080"
     volumes:
-      - ./certs:/usr/local/bin/certs
+      - mensa-data:/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
-  crud:
-    build: ./mensa-telegram-crud
-    container_name: crud
-    env_file: ./mensa-telegram-crud/.env
-    ports:
-      - "8082:8080"
-    restart: always
-    volumes:
-      - ./mensa-telegram-crud/mensa-telegram.db:/app/mensa-telegram.db
-      - type: bind
-        source: ./mensa-telegram-crud/mensa-telegram.db
-        target: /app/mensa-telegram.db
+volumes:
+  mensa-data:

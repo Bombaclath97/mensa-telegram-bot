@@ -14,6 +14,9 @@ var (
 	once     sync.Once
 )
 
+// ErrNotInitialized is returned by every helper when Init() has not run yet.
+var ErrNotInitialized = errors.New("bot not initialized: call telegrambot.Init() first")
+
 // Init initializes the bot singleton. Must be called once at startup.
 func Init(b *bot.Bot) {
 	once.Do(func() {
@@ -21,65 +24,80 @@ func Init(b *bot.Bot) {
 	})
 }
 
-// Get returns the bot instance
+// Get returns the bot instance, or ErrNotInitialized.
 func Get() (*bot.Bot, error) {
 	if instance == nil {
-		return nil, errors.New("FATAL: Bot not initialized. Call Init() first")
+		return nil, ErrNotInitialized
 	}
 	return instance, nil
 }
 
-// MustGet returns the bot instance or panics if not initialized
+// MustGet returns the bot instance or panics if not initialized.
 func MustGet() *bot.Bot {
 	if instance == nil {
-		panic("FATAL: Bot not initialized. Call Init() first")
+		panic(ErrNotInitialized)
 	}
 	return instance
 }
 
-// Send sends a text message to the specified chat (plain text, no markdown)
+// Every message the bot sends is parsed as HTML.
+//
+// The translations are authored with formatting (bold, <code>, links), which rendered as
+// literal markup for as long as no ParseMode was set. HTML is used rather than Markdown
+// because interpolated values — display names, group titles, typed input — are untrusted:
+// HTML has a reliable escape (tolgee.EscapeHTML, applied to every substituted value),
+// whereas Markdown v1 has none, so a member called "anna_b" would break the parse and
+// Telegram would reject the whole message.
+const parseMode = models.ParseModeHTML
+
+// Send sends a text message to the specified chat.
 func Send(ctx context.Context, chatID int64, message string) (*models.Message, error) {
-	return instance.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID,
-		Text:   message,
+	b, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      message,
+		ParseMode: parseMode,
 	})
 }
 
-// SendWithKeyboard sends a message with an inline keyboard (plain text, no markdown)
+// SendWithKeyboard sends a message with an inline keyboard.
 func SendWithKeyboard(ctx context.Context, chatID int64, message string, keyboard *models.InlineKeyboardMarkup) (*models.Message, error) {
-	return instance.SendMessage(ctx, &bot.SendMessageParams{
+	b, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        message,
+		ParseMode:   parseMode,
 		ReplyMarkup: keyboard,
 	})
 }
 
-// SendMarkdown sends a message with Markdown formatting
-func SendMarkdown(ctx context.Context, chatID int64, message string) (*models.Message, error) {
-	return instance.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    chatID,
-		Text:      message,
-		ParseMode: models.ParseModeMarkdown,
-	})
-}
-
-// SendPlain is an alias for Send (kept for backwards compatibility)
-func SendPlain(ctx context.Context, chatID int64, message string) (*models.Message, error) {
-	return Send(ctx, chatID, message)
-}
-
-// EditMessageText edits an existing message's text (plain text, no markdown)
+// EditMessageText edits an existing message's text.
 func EditMessageText(ctx context.Context, chatID int64, messageID int, text string) (*models.Message, error) {
-	return instance.EditMessageText(ctx, &bot.EditMessageTextParams{
+	b, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: messageID,
 		Text:      text,
+		ParseMode: parseMode,
 	})
 }
 
 // EditMessageKeyboard edits an existing message's inline keyboard
 func EditMessageKeyboard(ctx context.Context, chatID int64, messageID int, keyboard *models.InlineKeyboardMarkup) (*models.Message, error) {
-	return instance.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+	b, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
 		ChatID:      chatID,
 		MessageID:   messageID,
 		ReplyMarkup: keyboard,
@@ -88,17 +106,26 @@ func EditMessageKeyboard(ctx context.Context, chatID int64, messageID int, keybo
 
 // EditMessageWithKeyboard edits an existing message's text and inline keyboard
 func EditMessageWithKeyboard(ctx context.Context, chatID int64, messageID int, text string, keyboard *models.InlineKeyboardMarkup) (*models.Message, error) {
-	return instance.EditMessageText(ctx, &bot.EditMessageTextParams{
+	b, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      chatID,
 		MessageID:   messageID,
 		Text:        text,
+		ParseMode:   parseMode,
 		ReplyMarkup: keyboard,
 	})
 }
 
 // DeleteMessage deletes a message
 func DeleteMessage(ctx context.Context, chatID int64, messageID int) (bool, error) {
-	return instance.DeleteMessage(ctx, &bot.DeleteMessageParams{
+	b, err := Get()
+	if err != nil {
+		return false, err
+	}
+	return b.DeleteMessage(ctx, &bot.DeleteMessageParams{
 		ChatID:    chatID,
 		MessageID: messageID,
 	})
@@ -106,7 +133,11 @@ func DeleteMessage(ctx context.Context, chatID int64, messageID int) (bool, erro
 
 // AnswerCallback answers a callback query
 func AnswerCallback(ctx context.Context, callbackQueryID string, text string) (bool, error) {
-	return instance.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+	b, err := Get()
+	if err != nil {
+		return false, err
+	}
+	return b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: callbackQueryID,
 		Text:            text,
 	})
@@ -114,37 +145,65 @@ func AnswerCallback(ctx context.Context, callbackQueryID string, text string) (b
 
 // AnswerCallbackSilent answers a callback query without showing any message
 func AnswerCallbackSilent(ctx context.Context, callbackQueryID string) (bool, error) {
-	return instance.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+	b, err := Get()
+	if err != nil {
+		return false, err
+	}
+	return b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: callbackQueryID,
 	})
 }
 
 // GetChat retrieves chat information
 func GetChat(ctx context.Context, chatID int64) (*models.ChatFullInfo, error) {
-	return instance.GetChat(ctx, &bot.GetChatParams{
+	b, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return b.GetChat(ctx, &bot.GetChatParams{
 		ChatID: chatID,
 	})
 }
 
 // GetChatMember retrieves information about a chat member
 func GetChatMember(ctx context.Context, chatID, userID int64) (*models.ChatMember, error) {
-	return instance.GetChatMember(ctx, &bot.GetChatMemberParams{
+	b, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return b.GetChatMember(ctx, &bot.GetChatMemberParams{
 		ChatID: chatID,
 		UserID: userID,
 	})
 }
 
-// KickUser kicks (bans then unbans) a user from a group
-func KickUser(ctx context.Context, chatID, userID int64) error {
-	_, err := instance.BanChatMember(ctx, &bot.BanChatMemberParams{
+// GetChatAdministrators lists the administrators of a chat (creator included, bots included).
+func GetChatAdministrators(ctx context.Context, chatID int64) ([]models.ChatMember, error) {
+	b, err := Get()
+	if err != nil {
+		return nil, err
+	}
+	return b.GetChatAdministrators(ctx, &bot.GetChatAdministratorsParams{
 		ChatID: chatID,
-		UserID: userID,
 	})
+}
+
+// KickUser kicks a user from a group: ban then immediately unban, so they can re-join
+// later. A bare ban would be a permaban.
+func KickUser(ctx context.Context, chatID, userID int64) error {
+	b, err := Get()
 	if err != nil {
 		return err
 	}
 
-	_, err = instance.UnbanChatMember(ctx, &bot.UnbanChatMemberParams{
+	if _, err := b.BanChatMember(ctx, &bot.BanChatMemberParams{
+		ChatID: chatID,
+		UserID: userID,
+	}); err != nil {
+		return err
+	}
+
+	_, err = b.UnbanChatMember(ctx, &bot.UnbanChatMemberParams{
 		ChatID:       chatID,
 		UserID:       userID,
 		OnlyIfBanned: true,
@@ -152,9 +211,13 @@ func KickUser(ctx context.Context, chatID, userID int64) error {
 	return err
 }
 
-// DemoteUser removes admin privileges from a user
+// DemoteUser removes every admin privilege from a user in a group.
 func DemoteUser(ctx context.Context, chatID, userID int64) (bool, error) {
-	return instance.PromoteChatMember(ctx, &bot.PromoteChatMemberParams{
+	b, err := Get()
+	if err != nil {
+		return false, err
+	}
+	return b.PromoteChatMember(ctx, &bot.PromoteChatMemberParams{
 		ChatID:              chatID,
 		UserID:              userID,
 		CanManageChat:       false,
@@ -165,20 +228,34 @@ func DemoteUser(ctx context.Context, chatID, userID int64) (bool, error) {
 		CanChangeInfo:       false,
 		CanInviteUsers:      false,
 		CanPinMessages:      false,
+		CanPostMessages:     false,
+		CanEditMessages:     false,
+		CanPostStories:      false,
+		CanEditStories:      false,
+		CanDeleteStories:    false,
+		CanManageTopics:     false,
 	})
 }
 
-// ApproveJoinRequest approves a user's request to join a chat
+// ApproveJoinRequest approves a user's request to join a chat.
 func ApproveJoinRequest(ctx context.Context, chatID, userID int64) (bool, error) {
-	return instance.ApproveChatJoinRequest(ctx, &bot.ApproveChatJoinRequestParams{
+	b, err := Get()
+	if err != nil {
+		return false, err
+	}
+	return b.ApproveChatJoinRequest(ctx, &bot.ApproveChatJoinRequestParams{
 		ChatID: chatID,
 		UserID: userID,
 	})
 }
 
-// DeclineJoinRequest declines a user's request to join a chat
+// DeclineJoinRequest declines a user's request to join a chat.
 func DeclineJoinRequest(ctx context.Context, chatID, userID int64) (bool, error) {
-	return instance.DeclineChatJoinRequest(ctx, &bot.DeclineChatJoinRequestParams{
+	b, err := Get()
+	if err != nil {
+		return false, err
+	}
+	return b.DeclineChatJoinRequest(ctx, &bot.DeclineChatJoinRequestParams{
 		ChatID: chatID,
 		UserID: userID,
 	})
