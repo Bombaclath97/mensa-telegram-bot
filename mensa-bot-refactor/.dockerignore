@@ -1,0 +1,16 @@
+# Keep secrets, local state and build cruft out of the build context.
+.env
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+tolgee-cache.json
+
+# The locally-built binary (rebuilt inside the image).
+/mensa-bot
+mensa-bot
+
+# VCS / editor.
+.git
+.gitignore
+.dockerignore
