@@ -12,7 +12,9 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: "1.25"
+  # Every vulnerability govulncheck finds in this codebase lives in the Go standard library,
+  # which means the toolchain version IS the security posture. go.mod requires >= 1.26.5.
+  GO_VERSION: "1.26"
   IMAGE_NAME: ${{ github.repository }}
 
 # Cancel superseded runs on the same ref; the test job starts real containers and there is no
@@ -60,6 +62,33 @@ jobs:
         # callme webhook; a data race there is a real bug class, not a theoretical one.
         # The timeout is generous: pulling postgres:16-alpine on a cold runner is slow.
         run: go test -race -timeout 15m ./...
+
+  # govulncheck, not just Dependabot.
+  #
+  # The two answer different questions and you want both. Dependabot flags every advisory
+  # touching anything in go.sum, whether or not the code path is ever executed — which is why
+  # it reports "critical" findings that are unreachable, or live only in test-only
+  # dependencies that never ship in the image. govulncheck does REACHABILITY ANALYSIS: it
+  # only reports vulnerabilities this code actually calls. That makes its output actionable
+  # and, crucially, makes a non-empty result worth stopping for.
+  #
+  # Runs over every module in the repo — Dependabot scans them all, so this should too.
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [mensa-bot-refactor, mock-mensa-api, mtproto-roster]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: govulncheck
+        working-directory: ${{ matrix.module }}
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   # The sibling modules have their own go.mod and are not part of the bot's build, so they get
   # a cheap compile check rather than being silently allowed to rot.

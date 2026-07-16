@@ -1,6 +1,6 @@
 module github.com/Bombaclath97/mtproto-roster
 
-go 1.25.0
+go 1.26.5
 
 require github.com/gotd/td v0.161.0
 
