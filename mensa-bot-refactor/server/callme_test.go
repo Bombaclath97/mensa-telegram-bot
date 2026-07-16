@@ -1,32 +1,42 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
+	"github.com/Bombaclath97/mensa-telegram-bot/internal/testdb"
 	"github.com/Bombaclath97/mensa-telegram-bot/model"
 )
 
 // TestMain gives the callme handler a real DB: it resolves the user's language via
 // database.Get(), which Fatal-exits if the DB was never initialised.
+// Skips when Docker is unavailable.
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "mensa-server-test-*")
+	ctx := context.Background()
+
+	dsn, terminate, err := testdb.Start(ctx)
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "SKIP: no postgres container (is Docker running?): %v\n", err)
+		os.Exit(0)
 	}
-	os.Setenv("DB_PATH", filepath.Join(dir, "test.db"))
+	os.Setenv("DATABASE_URL", dsn)
+
 	if err := database.Init(); err != nil {
+		terminate()
 		panic("database.Init failed: " + err.Error())
 	}
+
 	code := m.Run()
+
 	_ = database.Close()
-	os.RemoveAll(dir)
+	terminate()
 	os.Exit(code)
 }
 

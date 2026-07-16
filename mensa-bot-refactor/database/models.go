@@ -20,6 +20,23 @@ type User struct {
 	IsBotAdmin      bool   `gorm:"default:false" json:"is_bot_admin"`
 	IsInternational bool   `gorm:"default:false" json:"is_international"`
 	Language        string `gorm:"default:it" json:"language"`
+
+	// GroupsSyncedAt is when the bot last probed every known group for this member and wrote
+	// their group_associations. NULL means it has never been done.
+	//
+	// This exists to disambiguate an empty association list, which otherwise has two
+	// indistinguishable meanings:
+	//
+	//	NULL           -> never probed. We do NOT know which groups they are in.
+	//	set, and empty -> probed, and they genuinely belong to no groups.
+	//
+	// The cleanup sweep must never delete a member of the first kind: kicking them from
+	// "no groups" and then dropping the row leaves them sitting in the group forever with
+	// no record they exist (cleanup/cleanup.go guards the error branch with exactly this
+	// reasoning, but an empty list is not an error). Deleting a member of the second kind
+	// is correct and must stay possible — a blanket "never delete on empty" rule would
+	// leak rows forever for anyone legitimately in no groups.
+	GroupsSyncedAt *time.Time `json:"groups_synced_at"`
 }
 
 // BeforeCreate applies the ADMIN_TELEGRAM_IDS seed to users that register after boot.

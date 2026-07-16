@@ -2,6 +2,7 @@ package database
 
 import (
 	"errors"
+	"time"
 
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
 
@@ -154,6 +155,17 @@ func (r *UserRepository) UpdateName(telegramID int64, firstName, lastName string
 			"first_name": firstName,
 			"last_name":  lastName,
 		}).Error
+}
+
+// MarkGroupsSynced stamps the member as having had every known group probed for their
+// membership. Call it ONLY after a probe that actually completed: the whole value of the
+// column is that a set timestamp means "we looked, and what is in groups_associations is the
+// truth". Stamping it after a partial or failed sweep re-creates the ambiguity it exists to
+// remove, and hands the cleanup sweep permission to delete someone it should have deferred.
+func (r *UserRepository) MarkGroupsSynced(telegramID int64, at time.Time) error {
+	return Get().Model(&User{}).
+		Where("telegram_id = ?", telegramID).
+		Update("groups_synced_at", at).Error
 }
 
 // GetLanguage retrieves the effective language for a Telegram ID: the registered user's

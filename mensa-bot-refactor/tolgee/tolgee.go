@@ -513,21 +513,18 @@ type diskCache struct {
 	Languages    map[string]Language `json:"languages"`
 }
 
-// cachePath resolves TOLGEE_CACHE_PATH, defaulting to a file next to the DB
-// (DB_PATH's directory) so the cache lives on the same persistent volume.
+// cachePath resolves TOLGEE_CACHE_PATH, defaulting to a file in the working directory.
+//
+// It used to default to DB_PATH's directory, so the cache would land on the same volume as
+// the SQLite file. Both the variable and the volume are gone: the database is Postgres now
+// and the bot keeps no state on disk, so there is no "persistent volume" to sit next to. The
+// Docker image points this at /tmp, which is writable and expendable — losing the cache only
+// costs a re-fetch from the CDN.
 func cachePath() string {
 	if p := strings.TrimSpace(os.Getenv("TOLGEE_CACHE_PATH")); p != "" {
 		return p
 	}
-	dbPath := strings.TrimSpace(os.Getenv("DB_PATH"))
-	if dbPath == "" {
-		return defaultCacheFileName
-	}
-	// DB_PATH may carry a "?_foreign_keys=on" style suffix; strip it.
-	if i := strings.IndexByte(dbPath, '?'); i >= 0 {
-		dbPath = dbPath[:i]
-	}
-	return filepath.Join(filepath.Dir(dbPath), defaultCacheFileName)
+	return defaultCacheFileName
 }
 
 func loadDiskCache() (map[string]Language, string) {

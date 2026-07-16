@@ -35,7 +35,6 @@ func ApproveCommandHandler(ctx context.Context, b *bot.Bot, update *models.Updat
 	logger.Debug("Processing /approva command", map[string]interface{}{"user_id": userID})
 
 	userRepo := database.NewUserRepository()
-	pendingRepo := database.NewPendingJoinRequestRepository()
 
 	lang := userRepo.GetLanguage(userID)
 
@@ -54,22 +53,48 @@ func ApproveCommandHandler(ctx context.Context, b *bot.Bot, update *models.Updat
 		return
 	}
 
+	approved, buffered := DrainPendingJoinRequests(ctx, userID, lang)
+
+	switch {
+	case buffered == 0:
+		tb.Send(ctx, chatID, tolgee.T("telegrambot.approvecommand.norequesttoapprove", lang))
+	case approved == 0:
+		// There WERE requests and not one could be approved: that is a real failure, not a
+		// quiet no-op.
+		tb.Send(ctx, chatID, tolgee.T("telegrambot.general.error", lang))
+	default:
+		tb.Send(ctx, chatID, tolgee.T("telegrambot.approvecommand.approved", lang))
+	}
+}
+
+// DrainPendingJoinRequests approves every join request buffered for this user while they
+// were still unregistered, and clears the buffer. It returns how many were approved and how
+// many were buffered to begin with — the caller needs both to tell "nothing to do" apart
+// from "everything failed".
+//
+// Extracted from /approva so that REGISTRATION can call it too. Until it did, the flow had a
+// hole big enough to strand every new member: an unregistered user requesting to join was
+// buffered and told to register, they registered — and then nothing happened. The buffer sat
+// there until they somehow worked out that /approva existed and typed it. The README even
+// promised "/approva (or the next automatic pass)"; there was no automatic pass.
+//
+// The caller owns the user-facing messaging: /approva sends a summary, registration folds it
+// into the welcome. Hence no messages here beyond the per-group DMs, and notify=false below.
+func DrainPendingJoinRequests(ctx context.Context, userID int64, lang string) (approved, buffered int) {
+	pendingRepo := database.NewPendingJoinRequestRepository()
+
 	pending, err := pendingRepo.GetForUser(userID)
 	if err != nil {
 		logger.Error("Failed to read pending join requests", map[string]interface{}{
 			"user_id": userID,
 			"error":   err.Error(),
 		})
-		tb.Send(ctx, chatID, tolgee.T("telegrambot.general.error", lang))
-		return
+		return 0, 0
 	}
-
 	if len(pending) == 0 {
-		tb.Send(ctx, chatID, tolgee.T("telegrambot.approvecommand.norequesttoapprove", lang))
-		return
+		return 0, 0
 	}
 
-	approved := 0
 	for _, request := range pending {
 		if joinRequestApproveAndAssociate(ctx, userID, request.GroupID, "", lang, false) {
 			approved++
@@ -95,16 +120,10 @@ func ApproveCommandHandler(ctx context.Context, b *bot.Bot, update *models.Updat
 		})
 	}
 
-	if approved == 0 {
-		tb.Send(ctx, chatID, tolgee.T("telegrambot.general.error", lang))
-		return
-	}
-
 	logger.Info("Drained pending join requests", map[string]interface{}{
 		"user_id":  userID,
 		"approved": approved,
 		"pending":  len(pending),
 	})
-
-	tb.Send(ctx, chatID, tolgee.T("telegrambot.approvecommand.approved", lang))
+	return approved, len(pending)
 }

@@ -1,0 +1,139 @@
+# CI: test everything, then publish the image Swarm will pull.
+#
+# The publish half is not a nicety. `docker stack deploy` IGNORES `build:` — Swarm can only
+# pull an image, never build one — so without this workflow there is nothing to deploy.
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.25"
+  IMAGE_NAME: ${{ github.repository }}
+
+# Cancel superseded runs on the same ref; the test job starts real containers and there is no
+# point paying for a run whose result nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    # The database, cleanup and server suites each start a real PostgreSQL via testcontainers,
+    # which needs a Docker daemon. ubuntu-latest ships one.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: mensa-bot-refactor/go.sum
+
+      - name: Verify go.mod is tidy
+        working-directory: mensa-bot-refactor
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum \
+            || { echo "::error::go.mod/go.sum are not tidy — run 'go mod tidy' and commit"; exit 1; }
+
+      - name: gofmt
+        working-directory: mensa-bot-refactor
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        working-directory: mensa-bot-refactor
+        run: go vet ./...
+
+      - name: Test
+        working-directory: mensa-bot-refactor
+        # -race because the draft store is touched by both the Telegram dispatcher and the
+        # callme webhook; a data race there is a real bug class, not a theoretical one.
+        # The timeout is generous: pulling postgres:16-alpine on a cold runner is slow.
+        run: go test -race -timeout 15m ./...
+
+  # The sibling modules have their own go.mod and are not part of the bot's build, so they get
+  # a cheap compile check rather than being silently allowed to rot.
+  build-siblings:
+    name: Build siblings
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [mock-mensa-api, mtproto-roster]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+      - name: Test
+        working-directory: ${{ matrix.module }}
+        run: go test ./...
+
+  publish:
+    name: Publish image
+    runs-on: ubuntu-latest
+    needs: [test]
+    # Never publish from a pull request: the image is what production pulls, and a PR from a
+    # fork must not be able to write to the registry.
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Built in; no PAT to create or rotate.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./mensa-bot-refactor
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "### Published" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Pin the stack to the \`sha-\` tag rather than \`latest\` if you want a" >> "$GITHUB_STEP_SUMMARY"
+          echo "redeploy to be reproducible." >> "$GITHUB_STEP_SUMMARY"

@@ -25,23 +25,36 @@ context (SIGINT/SIGTERM → graceful shutdown):
   - `POST /callme_api/{token}` — the callback the official Mensa app calls to
     approve or reject an identity-verification request.
 
-Persistence is a **plaintext SQLite database accessed directly via GORM**
-(`gorm.io/driver/sqlite`, cgo). There is no separate CRUD service and no
-HTTP/DB layer between the bot and its data. The schema is auto-migrated on boot.
+Persistence is **PostgreSQL accessed directly via GORM** (`gorm.io/driver/postgres`,
+pure Go). There is no separate CRUD service and no HTTP/DB layer between the bot
+and its data. The schema is auto-migrated on boot and foreign keys are enforced
+natively.
+
+The bot itself is **stateless** — it keeps nothing on disk. That is deliberate:
+it was SQLite, which pinned the process to one machine's filesystem and made
+Docker Swarm actively dangerous (a named volume is local to its node and does not
+follow a rescheduled task, so the bot would come up against an empty database).
+Postgres also drops the cgo dependency, which is why the image is now a 27 MB
+distroless static binary instead of a Debian base with a C toolchain behind it.
+
+Note this does **not** make the bot scalable: `replicas` must be exactly 1.
+Telegram permits one `getUpdates` poller per token, and both the draft store and
+the cleanup ticker are in-process. See [`DEPLOY.md`](DEPLOY.md).
 
 TLS is **not** handled by the service: it serves plain HTTP and is meant to sit
 behind a reverse proxy (nginx, Caddy, Traefik, …) that terminates TLS and
 forwards both the webhook path and the health check to `HTTP_ADDR`.
 
 ```
-                 ┌──────────────────────────────────────────┐
-   Telegram  ◄──►│  mensa-bot (single Go binary)             │
-  (long poll)    │    • bot handlers  ─┐                     │
-                 │    • http server   ─┼─► GORM ─► SQLite    │
- reverse proxy   │    • cleanup ticker ┘        (volume)     │
-  ──HTTP──►:8080 │                                           │
- (/callme_api,   │    outbound ─► Mensa API, Tolgee          │
-  /health)       └──────────────────────────────────────────┘
+                 ┌────────────────────────────────────┐
+   Telegram  ◄──►│  mensa-bot (single Go binary)      │
+  (long poll)    │    • bot handlers  ─┐              │       ┌────────────┐
+                 │    • http server   ─┼─► GORM ──────┼──────►│  Postgres  │
+ reverse proxy   │    • cleanup ticker ┘              │       │  (volume)  │
+  ──HTTP──►:8080 │                                    │       └────────────┘
+ (/callme_api,   │    outbound ─► Mensa API, Tolgee   │        the only state,
+  /health)       └────────────────────────────────────┘        pinned to a node
+                          stateless: no volume
 ```
 
 ## Registration & verification flow
@@ -66,8 +79,15 @@ never trusts a self-declared email/number on its own.
 6. From then on, any **join request** to a group the bot administers is
    auto-approved for that member and the group association is recorded. If an
    unregistered user requests to join, the bot DMs them to register first and
-   buffers the request; after they register, `/approva` (or the next automatic
-   pass) approves the buffered requests.
+   buffers the request; **registration itself drains the buffer**, so those
+   requests are approved the moment they finish. `/approva` re-runs the drain by
+   hand if it is ever needed.
+7. Registration also probes every known group for that member and records the
+   groups they were *already* in. Nothing else can discover those: a member who
+   was in the group before the bot arrived never issues a join request, and the
+   Bot API cannot list a group's members. Until this ran, such members were
+   invisible to `/elimina`, to `/profilo`'s group list, and to the cleanup
+   sweep — which would delete their row while kicking them from nothing.
 
 International Mensa members without an `@mensa.it` address are added by a bot
 admin via the hidden `/manual_add` command, which bypasses the email/app check.
@@ -109,7 +129,7 @@ for a template to copy. The essentials:
 | `API_BEARER_TOKEN`   | yes      | Bearer token for that API.                             |
 | `CALLME_BASE_URL`    | yes      | Public origin of this service + `/callme_api`.         |
 | `ADMIN_TELEGRAM_IDS` | no       | Comma-separated Telegram IDs flagged as bot admins.    |
-| `DB_PATH`            | no       | SQLite file (Docker default `/data/mensa-telegram.db`).|
+| `DATABASE_URL`       | yes*     | Postgres DSN. *Or the discrete `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` form. |
 | `HTTP_ADDR`          | no       | Bind address (default `:8080`).                        |
 | `TOLGEE_API_KEY`     | no       | Tolgee project key for translations.                   |
 
@@ -130,19 +150,31 @@ for a template to copy. The essentials:
    docker compose up -d --build
    ```
 
-The SQLite database and the Tolgee cache live on the named `mensa-data` volume,
-so they survive container replacement. The `mensa-bot` service publishes port
-`8080`; point your reverse proxy at it and forward `/callme_api/…` and `/health`.
+Postgres data lives on the named `mensa-pgdata` volume, so it survives container
+replacement. The bot has no volume — it is stateless. The `mensa-bot` service
+publishes port `8080`; point your reverse proxy at it and forward `/callme_api/…`.
+
+For **Docker Swarm / Portainer**, use [`docker-stack.yml`](docker-stack.yml) and read
+[`DEPLOY.md`](DEPLOY.md) first — `docker stack deploy` ignores `build:`, so it needs
+a published image, and the data pins the stack to one labelled node.
 
 ### Locally (development)
 
-Requires Go 1.25+ and a C toolchain (the SQLite driver is cgo, so
-`CGO_ENABLED=1`; it is on by default when gcc is present):
+Requires Go 1.25+ and a reachable Postgres. No C toolchain is needed any more —
+the build is `CGO_ENABLED=0` and fully static.
 
 ```sh
+docker compose up -d postgres        # or point DATABASE_URL at your own
 cd mensa-bot-refactor
-cp .env.example .env   # then fill it in
+cp .env.example .env                 # then fill it in
 go run .
+```
+
+The test suite starts its own throwaway Postgres via testcontainers, so it needs a
+running Docker daemon; it skips rather than fails without one.
+
+```sh
+go test ./...
 ```
 
 ## Translations

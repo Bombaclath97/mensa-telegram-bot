@@ -6,26 +6,35 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
+	"github.com/Bombaclath97/mensa-telegram-bot/internal/testdb"
 )
 
-// TestMain initialises a real temp SQLite DB (the sweep loads `users` and deletes rows).
+// TestMain initialises a real, throwaway PostgreSQL container (the sweep loads `users` and
+// deletes rows, and relies on the association cascade). Skips when Docker is unavailable.
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "mensa-cleanup-test-*")
+	ctx := context.Background()
+
+	dsn, terminate, err := testdb.Start(ctx)
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "SKIP: no postgres container (is Docker running?): %v\n", err)
+		os.Exit(0)
 	}
-	os.Setenv("DB_PATH", filepath.Join(dir, "test.db"))
+	os.Setenv("DATABASE_URL", dsn)
+
 	if err := database.Init(); err != nil {
+		terminate()
 		panic("database.Init failed: " + err.Error())
 	}
+
 	code := m.Run()
+
 	_ = database.Close()
-	os.RemoveAll(dir)
+	terminate()
 	os.Exit(code)
 }
 
@@ -112,16 +121,29 @@ type userOpt func(*database.User)
 func international() userOpt { return func(u *database.User) { u.IsInternational = true } }
 func botAdmin() userOpt      { return func(u *database.User) { u.IsBotAdmin = true } }
 
+// neverGroupSynced leaves groups_synced_at NULL, i.e. the bot has NEVER probed which groups
+// this member is in. Combined with an empty association list this means "we do not know where
+// they are", NOT "they are in no groups" — and the sweep must refuse to delete them.
+func neverGroupSynced() userOpt { return func(u *database.User) { u.GroupsSyncedAt = nil } }
+
 // insertUser creates a member row directly (bypassing repo side effects).
+//
+// groups_synced_at defaults to SET, because that is the steady state of a real registered
+// member: registration probes every known group and stamps them. A test that passes no
+// associations is therefore asserting "probed, and genuinely in no groups" — which is a
+// deletable member, and keeps these tests free of Telegram calls. Use neverGroupSynced() for
+// the other case.
 func insertUser(t *testing.T, telegramID, memberNumber int64, opts ...userOpt) {
 	t.Helper()
+	syncedAt := time.Now()
 	u := &database.User{
-		TelegramID:   telegramID,
-		MensaEmail:   fmt.Sprintf("user%d@mensa.it", telegramID),
-		FirstName:    "F",
-		LastName:     "L",
-		MemberNumber: memberNumber,
-		Language:     "it",
+		TelegramID:     telegramID,
+		MensaEmail:     fmt.Sprintf("user%d@mensa.it", telegramID),
+		FirstName:      "F",
+		LastName:       "L",
+		MemberNumber:   memberNumber,
+		Language:       "it",
+		GroupsSyncedAt: &syncedAt,
 	}
 	for _, o := range opts {
 		o(u)
@@ -207,6 +229,78 @@ func TestExpiredMemberIsRemoved(t *testing.T) {
 	}
 	if userExists(t, 500001) {
 		t.Fatal("an expired member should have been deleted")
+	}
+}
+
+// TestNeverGroupSyncedMemberIsNotDeleted pins THE orphaning bug.
+//
+// An expired member with no associations and groups_synced_at NULL must be DEFERRED, never
+// deleted. The two states are indistinguishable from the association table alone:
+//
+//	never probed          -> we have no idea which groups they are in
+//	probed, truly empty   -> they are in none
+//
+// Reading the first as the second walks through the kick loop with nothing to kick, marks the
+// sweep resolved, and drops the row — leaving an expired member inside the group forever with
+// no record they ever existed. cleanupRemoveMember's error branch was written to prevent
+// exactly that ("that would orphan them inside the groups forever"), but an empty list is not
+// an error, so it sailed straight past.
+//
+// This is not hypothetical: before registration probed groups, EVERY member already in a
+// group when the bot arrived had exactly this shape.
+func TestNeverGroupSyncedMemberIsNotDeleted(t *testing.T) {
+	clearDB(t)
+	insertUser(t, 500042, 88, neverGroupSynced())
+
+	api := newMockAPI(t, map[string]bool{"88": false}) // expired
+	api.arm(t)
+	t.Setenv("CLEANUP_DRY_RUN", "false")
+
+	report, err := RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	if report.Expired != 1 {
+		t.Fatalf("expired = %d, want 1: %+v", report.Expired, report)
+	}
+	if report.Deleted != 0 {
+		t.Fatalf("deleted = %d, want 0: a never-probed member must never be deleted: %+v",
+			report.Deleted, report)
+	}
+	if report.Failed != 1 {
+		t.Fatalf("failed = %d, want 1: the deferral must be reported, not silently skipped: %+v",
+			report.Failed, report)
+	}
+	if !userExists(t, 500042) {
+		t.Fatal("a member whose groups were never probed must survive the sweep: deleting them " +
+			"orphans them inside their groups forever")
+	}
+}
+
+// TestGroupSyncedButGrouplessMemberIsDeleted is the other half of the contract.
+//
+// Without this, "never delete on an empty list" would look like a safe blanket rule — and it
+// would leak rows forever for anyone legitimately in no groups. The timestamp is what makes
+// the empty list trustworthy.
+func TestGroupSyncedButGrouplessMemberIsDeleted(t *testing.T) {
+	clearDB(t)
+	insertUser(t, 500043, 89) // groups_synced_at defaults to SET
+
+	api := newMockAPI(t, map[string]bool{"89": false}) // expired
+	api.arm(t)
+	t.Setenv("CLEANUP_DRY_RUN", "false")
+
+	report, err := RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if report.Deleted != 1 {
+		t.Fatalf("deleted = %d, want 1: a probed member with genuinely no groups is deletable: %+v",
+			report.Deleted, report)
+	}
+	if userExists(t, 500043) {
+		t.Fatal("a probed, genuinely groupless expired member should have been deleted")
 	}
 }
 

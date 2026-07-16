@@ -383,8 +383,44 @@ func ProfileCompleteAfterApproval(ctx context.Context, userID int64) bool {
 	})
 
 	tb.Send(ctx, userID, tolgee.T("telegrambot.conversation.creationsuccess", lang))
+	CompleteRegistrationSideEffects(ctx, userID, lang)
 	showProfileCard(ctx, userID, user)
 	return true
+}
+
+// CompleteRegistrationSideEffects runs everything that must happen the moment a member's row
+// exists, regardless of HOW they registered (the app round-trip, or an admin's /manual_add).
+//
+// Both are best-effort and deliberately non-fatal: the member IS registered by the time this
+// runs, and failing them here would be strictly worse than the degraded state each fallback
+// leaves behind.
+//
+//  1. Drain the join requests buffered while they were unregistered. Without this the member
+//     was told "register first", registered, and then sat there — the buffer only drained if
+//     they discovered /approva on their own. This is the seam that was missing.
+//  2. Probe every known group and write their group_associations. Nothing else can do this:
+//     an existing member already inside a group never issues a join request, so this is the
+//     only moment the bot can learn where they are. Without it the cleanup sweep would later
+//     delete their row while kicking them from nothing.
+//
+// The order matters. Draining first approves the pending requests, and each approval already
+// writes its own association; the sync then picks up every OTHER group they were already in.
+func CompleteRegistrationSideEffects(ctx context.Context, userID int64, lang string) {
+	if approved, _ := DrainPendingJoinRequests(ctx, userID, lang); approved > 0 {
+		logger.Info("Drained buffered join requests on registration", map[string]interface{}{
+			"user_id":  userID,
+			"approved": approved,
+		})
+	}
+
+	if err := SyncMemberGroups(ctx, userID); err != nil {
+		// groups_synced_at stays NULL, so the cleanup sweep will defer this member rather
+		// than delete them. That is the safe direction, and the next sync can fix it.
+		logger.Warn("Could not sync the member's groups at registration", map[string]interface{}{
+			"user_id": userID,
+			"error":   err.Error(),
+		})
+	}
 }
 
 // ProfileMessageHandler handles text messages during profile registration
