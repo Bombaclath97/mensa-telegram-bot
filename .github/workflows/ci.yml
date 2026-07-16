@@ -158,6 +158,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+          # Swarm can't resolve buildx's default attestations: they add an "unknown/unknown"
+          # entry to the image index and Swarm reports "No such image" for a valid image.
+          provenance: false
+          sbom: false
+
       - name: Summary
         run: |
           echo "### Published" >> "$GITHUB_STEP_SUMMARY"
