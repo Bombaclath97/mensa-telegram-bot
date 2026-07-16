@@ -1,28 +1,43 @@
 package database
 
 import (
+	"context"
+	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/Bombaclath97/mensa-telegram-bot/internal/testdb"
 )
 
-// TestMain initialises a single real (temp-file) SQLite database for the whole package.
-// A real file — not :memory: — is used so that foreign-key CASCADE behaviour, which is what
-// several of these tests exercise, is identical to production.
+// TestMain runs the whole package against a real, throwaway PostgreSQL container — the same
+// engine as production.
+//
+// That is the point. This schema leans on foreign keys with ON DELETE CASCADE, and several
+// tests below exist purely to prove those cascades fire. The suite used to run on SQLite,
+// which disables foreign keys PER CONNECTION by default and needed a DSN hack to behave;
+// testing on one engine while shipping another is exactly where this class of bug hides.
+//
+// Skips rather than fails when Docker is unavailable, so `go test ./...` on a machine with no
+// daemon reports honestly instead of exploding.
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "mensa-db-test-*")
+	ctx := context.Background()
+
+	dsn, terminate, err := testdb.Start(ctx)
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "SKIP: no postgres container (is Docker running?): %v\n", err)
+		os.Exit(0)
 	}
-	os.Setenv("DB_PATH", filepath.Join(dir, "test.db"))
+	os.Setenv("DATABASE_URL", dsn)
 
 	if err := Init(); err != nil {
+		terminate()
 		panic("database.Init failed: " + err.Error())
 	}
 
 	code := m.Run()
+
 	_ = Close()
-	os.RemoveAll(dir)
+	terminate()
 	os.Exit(code)
 }
 
@@ -369,6 +384,77 @@ func TestSeedBotAdminsAppliesToLaterRegistration(t *testing.T) {
 	repo.Create(newUserUnique(557))
 	if got, _ := repo.GetByID(557); got.IsBotAdmin {
 		t.Fatal("a non-seeded user must not be a bot admin")
+	}
+}
+
+// TestSeedBotAdminsRevokesRemovedAdmin: taking an ID OUT of ADMIN_TELEGRAM_IDS must take the
+// right away.
+//
+// This is the regression that matters. is_bot_admin used to be a one-way latch: the promotion
+// was its only writer, so an admin removed from the env kept the flag on their row and
+// IsBotAdmin's DB fallback went on answering true forever. There was no way to demote anyone
+// short of editing the database by hand.
+func TestSeedBotAdminsRevokesRemovedAdmin(t *testing.T) {
+	clearAll(t)
+	repo := NewUserRepository()
+	repo.Create(newUser(558))
+	repo.Create(newUserUnique(559))
+
+	// Both are admins.
+	if err := SeedBotAdmins([]int64{558, 559}); err != nil {
+		t.Fatalf("SeedBotAdmins: %v", err)
+	}
+	if admin, _ := repo.IsBotAdmin(558); !admin {
+		t.Fatal("558 should be an admin after the first seed")
+	}
+
+	// Reboot with 558 removed from the list.
+	if err := SeedBotAdmins([]int64{559}); err != nil {
+		t.Fatalf("SeedBotAdmins: %v", err)
+	}
+
+	got, _ := repo.GetByID(558)
+	if got.IsBotAdmin {
+		t.Fatal("558 was removed from ADMIN_TELEGRAM_IDS: the is_bot_admin column must be cleared")
+	}
+	if admin, _ := repo.IsBotAdmin(558); admin {
+		t.Fatal("IsBotAdmin must report false for a revoked admin (the DB fallback used to keep saying true)")
+	}
+	if IsSeededBotAdmin(558) {
+		t.Fatal("558 must be out of the seeded set")
+	}
+
+	// 559 is untouched.
+	if admin, _ := repo.IsBotAdmin(559); !admin {
+		t.Fatal("559 is still in the list and must remain an admin")
+	}
+}
+
+// TestSeedBotAdminsEmptyListRevokesEveryone: .env.example promises "Leave blank to disable
+// /manual_add entirely" — so a blank ADMIN_TELEGRAM_IDS must actually demote everyone, not
+// quietly leave the incumbents in place.
+func TestSeedBotAdminsEmptyListRevokesEveryone(t *testing.T) {
+	clearAll(t)
+	repo := NewUserRepository()
+	repo.Create(newUser(560))
+
+	if err := SeedBotAdmins([]int64{560}); err != nil {
+		t.Fatalf("SeedBotAdmins: %v", err)
+	}
+	if admin, _ := repo.IsBotAdmin(560); !admin {
+		t.Fatal("560 should be an admin after seeding")
+	}
+
+	// Blank the env var and reboot.
+	if err := SeedBotAdmins(nil); err != nil {
+		t.Fatalf("SeedBotAdmins(nil): %v", err)
+	}
+
+	if got, _ := repo.GetByID(560); got.IsBotAdmin {
+		t.Fatal("an empty ADMIN_TELEGRAM_IDS must leave nobody flagged is_bot_admin")
+	}
+	if admin, _ := repo.IsBotAdmin(560); admin {
+		t.Fatal("IsBotAdmin must report false once the list is emptied")
 	}
 }
 

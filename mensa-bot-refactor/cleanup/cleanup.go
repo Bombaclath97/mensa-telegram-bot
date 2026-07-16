@@ -517,6 +517,31 @@ func cleanupRemoveMember(ctx context.Context, user database.User, cfg cleanupCon
 		return
 	}
 
+	// The SAME reasoning as the error branch above, for the case that is not an error.
+	//
+	// An empty association list has two meanings, and only one of them is safe:
+	//
+	//	groups_synced_at NULL  -> we have NEVER probed. We do not know where they are.
+	//	groups_synced_at set   -> we probed, and they really are in no groups.
+	//
+	// Until the probe exists for a member, an empty list is ignorance, not knowledge. Reading
+	// it as "in no groups" walks straight through the loop below with nothing to kick, marks
+	// the sweep resolved, and deletes the row — leaving an expired member sitting in the
+	// group forever with no record they exist. That is precisely the outcome the error branch
+	// above was written to prevent, reached through the happy path.
+	//
+	// Note this defers ONLY the never-probed. A member with a set timestamp and no groups is
+	// genuinely groupless and still gets deleted, as they should: a blanket "never delete on
+	// empty" rule would leak those rows forever.
+	if len(associations) == 0 && user.GroupsSyncedAt == nil {
+		report.Failed++
+		logger.Warn("cleanup: member has no associations and has never been group-synced, deferring their removal", map[string]interface{}{
+			"telegram_id": user.TelegramID,
+			"reason":      "groups_synced_at is NULL: an empty association list here means we never looked, not that they are in no groups",
+		})
+		return
+	}
+
 	groupsResolved := true
 	for _, assoc := range associations {
 		if ctx.Err() != nil {

@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
 	"github.com/Bombaclath97/mensa-telegram-bot/cleanup"
+	"github.com/Bombaclath97/mensa-telegram-bot/config"
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/handlers"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
@@ -21,9 +23,29 @@ import (
 )
 
 func main() {
+	// Health-probe mode, for the container HEALTHCHECK. Handled before ANY other startup:
+	// it must not load .env, resolve secrets, open the database or touch Telegram — it is a
+	// throwaway process that makes one HTTP call to the real one and exits.
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		os.Exit(runHealthcheck())
+	}
+
 	// Load environment variables from .env file
 	if err := godotenv.Load(); err != nil {
 		// Will use system environment variables
+	}
+
+	// Resolve Docker's "*_FILE" secret convention into plain env vars.
+	//
+	// MUST run before anything reads its configuration: Swarm delivers BOT_TOKEN,
+	// API_BEARER_TOKEN and DATABASE_URL as FILES under /run/secrets/, and every reader in
+	// this codebase uses os.Getenv. Doing it here means none of them have to care.
+	//
+	// After godotenv.Load, so a local .env can point at fixture files the same way.
+	if err := config.ExpandFileSecrets(); err != nil {
+		// Before logger.Init, so this cannot use the logger.
+		fmt.Fprintf(os.Stderr, "FATAL: could not resolve file-backed secrets: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Initialize logger

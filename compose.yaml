@@ -1,27 +1,54 @@
+# Local / single-host deployment. For Docker Swarm + Portainer use docker-stack.yml instead —
+# `docker stack deploy` ignores `build:`, `container_name` and `restart:`, all of which this
+# file relies on.
 services:
-  # Single service replacing the legacy bot + crud pair. Serves plain HTTP behind
-  # a reverse proxy that terminates TLS; the SQLite database lives on a named volume.
   mensa-bot:
     build: ./mensa-bot-refactor
     container_name: mensa-bot
     env_file: ./mensa-bot-refactor/.env
     environment:
-      # Keep state on the mounted volume regardless of what .env says.
-      DB_PATH: /data/mensa-telegram.db
-      TOLGEE_CACHE_PATH: /data/tolgee-cache.json
+      # Postgres, not SQLite. The bot holds no state on disk any more, so it has no volume.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-mensa}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-mensa}
+      DB_NAME: ${POSTGRES_DB:-mensa}
+      DB_SSLMODE: disable
+      # Expendable: losing it only costs a re-fetch from the Tolgee CDN.
+      TOLGEE_CACHE_PATH: /tmp/tolgee-cache.json
       HTTP_ADDR: ":8080"
     ports:
       # host:container — publish the plain-HTTP port for the reverse proxy.
       - "8080:8080"
-    volumes:
-      - mensa-data:/data
     restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Inherited from the image (the binary probes its own /health — see healthcheck.go).
+    # Restated here only to make it visible; the image would apply it anyway.
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      test: ["CMD", "/mensa-bot", "-healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: mensa-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mensa}
+      POSTGRES_USER: ${POSTGRES_USER:-mensa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mensa}
+    volumes:
+      - mensa-pgdata:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mensa} -d ${POSTGRES_DB:-mensa}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
 volumes:
-  mensa-data:
+  mensa-pgdata:

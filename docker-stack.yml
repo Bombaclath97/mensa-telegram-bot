@@ -1,0 +1,200 @@
+# Docker Swarm stack — deploy via Portainer, or:
+#
+#   docker stack deploy -c docker-stack.yml mensa
+#
+# Read DEPLOY.md before your first deploy: this file assumes an image in GHCR, four external
+# secrets, an external Traefik network, and one labelled node. None of that is optional.
+#
+# ---------------------------------------------------------------------------------------
+# WHY THERE IS NO `build:` HERE
+#
+# `docker stack deploy` IGNORES build. Swarm cannot build an image — it can only pull one.
+# The image below must already exist in the registry, which is what .github/workflows does.
+# ---------------------------------------------------------------------------------------
+version: "3.8"
+
+services:
+  # -------------------------------------------------------------------------------------
+  # The bot. STATELESS since the move to Postgres, so it carries no volume and no placement
+  # constraint: Swarm may schedule it on any node.
+  # -------------------------------------------------------------------------------------
+  mensa-bot:
+    image: ${MENSA_BOT_IMAGE:-ghcr.io/bombaclath97/mensa-telegram-bot:latest}
+
+    environment:
+      # Discrete DB_* form, NOT DATABASE_URL, so the bot and postgres can share ONE password
+      # secret instead of duplicating it into a second URL-shaped secret that would drift on
+      # the first rotation.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: mensa
+      DB_NAME: mensa
+      DB_SSLMODE: disable
+      DB_PASSWORD_FILE: /run/secrets/mensa_db_password
+
+      BOT_TOKEN_FILE: /run/secrets/mensa_bot_token
+      API_BEARER_TOKEN_FILE: /run/secrets/mensa_api_bearer_token
+
+      API_ENDPOINT: ${API_ENDPOINT:?set API_ENDPOINT}
+      CALLME_BASE_URL: ${CALLME_BASE_URL:?set CALLME_BASE_URL, the PUBLIC origin + /callme_api}
+      ADMIN_TELEGRAM_IDS: ${ADMIN_TELEGRAM_IDS:-}
+
+      HTTP_ADDR: ":8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      TOLGEE_API_KEY_FILE: /run/secrets/mensa_tolgee_api_key
+      # /tmp is writable in the distroless image and the cache is expendable — losing it just
+      # costs a re-fetch. Nothing here needs a volume.
+      TOLGEE_CACHE_PATH: /tmp/tolgee-cache.json
+
+      # The expiry sweep SHIPS DRY. Read DEPLOY.md before flipping this.
+      CLEANUP_DRY_RUN: ${CLEANUP_DRY_RUN:-true}
+      CLEANUP_INTERVAL_HOURS: ${CLEANUP_INTERVAL_HOURS:-24}
+      CLEANUP_MAX_DELETIONS: ${CLEANUP_MAX_DELETIONS:-10}
+      CLEANUP_MAX_FRACTION: ${CLEANUP_MAX_FRACTION:-0.25}
+
+    secrets:
+      - mensa_db_password
+      - mensa_bot_token
+      - mensa_api_bearer_token
+      - mensa_tolgee_api_key
+
+    networks:
+      - mensa-internal
+      - traefik-public
+
+    deploy:
+      # ---------------------------------------------------------------------------------
+      # EXACTLY ONE. This is a correctness constraint, not a capacity choice. Three
+      # independent reasons, any one of which is fatal:
+      #
+      #  1. Telegram permits ONE getUpdates poller per bot token. A second replica gets
+      #     "409 Conflict: terminated by other getUpdates request" and the two instances
+      #     kick each other out in a loop, forever.
+      #  2. model.Drafts is an in-process map. A registration started on replica A is
+      #     invisible to replica B, so the Mensa app's callback 403s at random.
+      #  3. cleanup.Start runs an in-process ticker. Two replicas = two independent
+      #     destructive sweeps racing over the same rows.
+      #
+      # Postgres does NOT change any of this. Do not raise it.
+      # ---------------------------------------------------------------------------------
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 10s
+      update_config:
+        # stop-first is the default, and it is stated explicitly because start-first would
+        # briefly run TWO pollers and trigger the 409 loop above on every single deploy.
+        order: stop-first
+        failure_action: rollback
+      rollback_config:
+        order: stop-first
+
+      labels:
+        # Traefik reads labels from the SERVICE (i.e. under `deploy`) in Swarm mode, NOT from
+        # the container. Putting these at the service top level is the classic Swarm+Traefik
+        # bug: they are silently ignored and nothing routes, with no error anywhere.
+        - traefik.enable=true
+        - traefik.docker.network=traefik-public
+
+        # PathPrefix is a security boundary, not tidiness. The ONLY thing that needs to be
+        # reachable from the internet is the Mensa app's callback. /health exists for the
+        # orchestrator; routing it publicly hands anyone a free liveness oracle for the bot.
+        - traefik.http.routers.mensa-bot.rule=Host(`${MENSA_BOT_HOST:?set MENSA_BOT_HOST}`) && PathPrefix(`/callme_api`)
+        - traefik.http.routers.mensa-bot.entrypoints=websecure
+        - traefik.http.routers.mensa-bot.tls=true
+        - traefik.http.routers.mensa-bot.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+
+        - traefik.http.services.mensa-bot.loadbalancer.server.port=8080
+        # Traefik's own health check still uses /health directly against the task, which works
+        # regardless of what the router exposes publicly.
+        - traefik.http.services.mensa-bot.loadbalancer.healthcheck.path=/health
+        - traefik.http.services.mensa-bot.loadbalancer.healthcheck.interval=30s
+
+  # -------------------------------------------------------------------------------------
+  # Postgres. This is the ONLY stateful thing left, so it is the only thing pinned.
+  # -------------------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+
+    environment:
+      POSTGRES_DB: mensa
+      POSTGRES_USER: mensa
+      # The official image supports the same _FILE convention the bot does, so both read the
+      # SAME secret. One password, one place.
+      POSTGRES_PASSWORD_FILE: /run/secrets/mensa_db_password
+
+    secrets:
+      - mensa_db_password
+
+    volumes:
+      - mensa-pgdata:/var/lib/postgresql/data
+
+    networks:
+      - mensa-internal
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mensa -d mensa"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      placement:
+        # ---------------------------------------------------------------------------------
+        # PIN THE DATA. A Swarm named volume is LOCAL TO ITS NODE and does NOT follow a
+        # rescheduled task. Without this constraint, a drain or a node failure moves postgres
+        # to another machine, where it finds an empty directory and cheerfully initialises a
+        # BRAND NEW EMPTY DATABASE. Nothing errors. The bot then sees zero registered members
+        # — and every member looks unverified to the cutover kicker.
+        #
+        # Label the node that holds the data:
+        #   docker node update --label-add mensa-data=true <node>
+        #
+        # The honest trade: that node dying is downtime, not failover. Real HA needs managed
+        # Postgres, not a cleverer constraint.
+        # ---------------------------------------------------------------------------------
+        constraints:
+          - node.labels.mensa-data == true
+
+networks:
+  mensa-internal:
+    driver: overlay
+    # Postgres is reachable ONLY here: it is never published, and nothing outside this stack
+    # joins this network. `internal: true` removes the gateway, so this network has no egress.
+    #
+    # That is fine for postgres, which needs none. The BOT needs plenty (Telegram, the Mensa
+    # API, Tolgee) and gets it from traefik-public below — which works because a standard
+    # traefik-public is NOT internal. If yours is, the bot will start, connect to Postgres,
+    # and then silently fail every outbound call: attach it to an egress-capable network too.
+    internal: true
+    attachable: false
+
+  traefik-public:
+    external: true
+
+volumes:
+  mensa-pgdata:
+    # Local driver, pinned by the constraint above. Back it up: `docker exec <pg> pg_dump`.
+
+secrets:
+  # All external: created once, out of band, so no secret value ever lives in this file or in
+  # Portainer's database.
+  #
+  #   printf '%s' '<bot token>' | docker secret create mensa_bot_token -
+  #
+  # NOTE the printf: `echo` appends a newline, and a BOT_TOKEN with a trailing "\n" produces a
+  # 404 from Telegram that looks exactly like a wrong token. The bot trims it defensively
+  # (config.ExpandFileSecrets), but do not rely on that.
+  mensa_db_password:
+    external: true
+  mensa_bot_token:
+    external: true
+  mensa_api_bearer_token:
+    external: true
+  mensa_tolgee_api_key:
+    external: true

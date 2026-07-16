@@ -415,6 +415,15 @@ func manualAddFinish(ctx context.Context, chatID, adminID int64, draft *manualAd
 			"target_id": draft.TargetUserID,
 		})
 	}
+
+	// Same post-registration work as the app flow: drain their buffered join requests and
+	// learn which groups they are already in. A manually added international member reaches
+	// this by a different path but ends up in exactly the same state, so skipping it here
+	// would leave precisely the population /manual_add exists to serve invisible to the
+	// cleanup sweep.
+	//
+	// NOTE: acts on the TARGET, not on the admin who ran the command.
+	CompleteRegistrationSideEffects(ctx, draft.TargetUserID, targetLang)
 }
 
 // manualAddLooksLikeEmail is a deliberately permissive check: it only rejects

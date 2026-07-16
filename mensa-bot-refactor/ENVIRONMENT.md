@@ -23,11 +23,50 @@ is meant to sit behind a reverse proxy that terminates TLS.
 | --- | --- | --- |
 | `HTTP_ADDR` | `:8080` | Bind address for the inbound HTTP server: `GET /health` (liveness) and `POST /callme_api/{token}` (Mensa app approval webhook). |
 
-## Storage
+## Storage (PostgreSQL)
+
+The bot keeps **no state on disk** — it is stateless, and has no volume. Everything lives in
+Postgres. The schema is auto-migrated on boot; foreign keys are enforced natively (the old
+SQLite `_foreign_keys=on` DSN hack is gone).
+
+Configure it **either** with one URL **or** with discrete parts. The URL wins if both are set.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DB_PATH` | `./mensa-telegram.db` | SQLite database file. Opened with foreign keys on and auto-migrated. In the Docker image this defaults to `/data/mensa-telegram.db` on a volume. |
+| `DATABASE_URL` | (empty) | Full DSN, e.g. `postgres://mensa:pw@postgres:5432/mensa?sslmode=disable`. Simplest for local dev. |
+| `DB_HOST` | (empty) | Hostname. Required if `DATABASE_URL` is unset. |
+| `DB_PORT` | `5432` | |
+| `DB_USER` | (empty) | Required with `DB_HOST`. |
+| `DB_PASSWORD` | (empty) | Escaped correctly even if it contains `@`, `/` or `:`. |
+| `DB_NAME` | (empty) | Required with `DB_HOST`. |
+| `DB_SSLMODE` | `disable` | The bot reaches Postgres over a private overlay network, not the internet. |
+
+**In Swarm, prefer the discrete form with `DB_PASSWORD_FILE`.** A `DATABASE_URL` embeds the
+password, so it would have to be duplicated into a second secret alongside the one Postgres
+itself reads (`POSTGRES_PASSWORD_FILE`) — and the two would drift on the first rotation. With
+`DB_PASSWORD_FILE`, both services read the *same* secret. See `DEPLOY.md`.
+
+## Secrets (`*_FILE`)
+
+**Any** variable can be supplied indirectly using the conventional Docker suffix: set
+`X_FILE=/path` and the contents of that file become `X`. This is how Docker Swarm delivers
+secrets, and it is resolved once at startup (`config.ExpandFileSecrets`) before anything reads
+its configuration.
+
+```
+BOT_TOKEN_FILE=/run/secrets/mensa_bot_token
+DB_PASSWORD_FILE=/run/secrets/mensa_db_password
+API_BEARER_TOKEN_FILE=/run/secrets/mensa_api_bearer_token
+```
+
+Rules:
+
+- Surrounding whitespace is trimmed. `echo` appends a newline, and a `BOT_TOKEN` ending in
+  `\n` produces a 404 from Telegram that looks exactly like a wrong token.
+- Setting both `X` and `X_FILE` is a **fatal error**, not a silent preference — guessing a
+  winner is how a stale token overrides a rotated one.
+- An unreadable or empty secret file is fatal. Continuing would fall back to an empty token
+  and fail later, further away, with a worse message.
 
 ## Translations (Tolgee)
 
@@ -37,7 +76,7 @@ translation outage never stops the bot (it degrades to rendering raw keys).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `TOLGEE_API_KEY` | (empty) | Tolgee project API key. |
-| `TOLGEE_CACHE_PATH` | `<dir of DB_PATH>/tolgee-cache.json` | On-disk fallback cache. Keep it on a durable volume so the cold-start-during-outage fallback survives a restart. Docker default: `/data/tolgee-cache.json`. |
+| `TOLGEE_CACHE_PATH` | `./tolgee-cache.json` | On-disk fallback cache. Docker default: `/tmp/tolgee-cache.json` — writable and expendable, since losing it only costs a re-fetch from the CDN. It no longer defaults next to the database: there is no volume any more. |
 | `TOLGEE_CDN_PROJECT_ID` | (built-in) | Overrides the CDN project ID for the CDN fallback tier. |
 | `TOLGEE_CDN_URL` | (built-in) | Overrides the CDN base URL. |
 
