@@ -165,16 +165,24 @@ services:
         # rescheduled task. Without this constraint, a drain or a node failure moves postgres
         # to another machine, where it finds an empty directory and cheerfully initialises a
         # BRAND NEW EMPTY DATABASE. Nothing errors. The bot then sees zero registered members
-        # — and every member looks unverified to the cutover kicker.
+        # — and every one of them looks unverified to the grace-period kicker.
         #
-        # Label the node that holds the data:
-        #   docker node update --label-add mensa-data=true <node>
+        # THIS IS A MULTI-NODE SWARM, so the constraint is load-bearing: there really are other
+        # machines for Swarm to move postgres to. On a single-node swarm it would be redundant.
+        #
+        # Pinned BY HOSTNAME rather than by a node label, deliberately: a label has to be
+        # created out of band (Swarm -> Nodes -> Labels), which is one more thing to get right
+        # in a UI, and one more thing that is silently missing if you forget — the service just
+        # sits Pending forever with "no suitable node". A hostname needs nothing created; it is
+        # just another value in the stack's environment, next to all the others.
+        #
+        # Find it in Portainer under Swarm -> Cluster: it is the node's Name column.
         #
         # The honest trade: that node dying is downtime, not failover. Real HA needs managed
         # Postgres, not a cleverer constraint.
         # ---------------------------------------------------------------------------------
         constraints:
-          - node.labels.mensa-data == true
+          - node.hostname == ${MENSA_DB_NODE:?set MENSA_DB_NODE to the hostname of the node that holds the postgres volume (Portainer -> Swarm -> Cluster -> Name)}
 
 networks:
   mensa-internal:
