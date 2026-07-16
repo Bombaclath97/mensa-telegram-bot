@@ -33,8 +33,18 @@ func DeleteCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update
 	}
 
 	userRepo := database.NewUserRepository()
-	user, _ := userRepo.GetByID(userID)
 	lang := userRepo.GetLanguage(userID)
+
+	// G21: a transient DB error must not look like "not registered".
+	user, err := userRepo.GetByID(userID)
+	if err != nil {
+		logger.Error("Failed to look up user", map[string]interface{}{
+			"error":   err.Error(),
+			"user_id": userID,
+		})
+		tb.Send(ctx, chatID, tolgee.T("telegrambot.general.error", lang))
+		return
+	}
 
 	if user == nil {
 		tb.Send(ctx, chatID, tolgee.T("telegrambot.startcommand.notregistered", lang))
@@ -84,37 +94,15 @@ func DeleteCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Updat
 	groupAssocRepo := database.NewGroupAssociationRepository()
 	lang := userRepo.GetLanguage(userID)
 
+	_ = groupAssocRepo // deletion goes through DeleteMemberEverywhere
+
 	switch q.Data {
 	case "delete:confirm":
-		// Get user's groups before deletion
-		groups, _ := groupAssocRepo.GetUserGroups(userID)
-
-		// Kick from all groups
-		for _, assoc := range groups {
-			// Check user role in group
-			chatMember, err := tb.GetChatMember(ctx, assoc.GroupID, userID)
-			if err != nil {
-				continue
-			}
-
-			// Don't kick if user is owner
-			if chatMember.Owner != nil && chatMember.Owner.Status == "creator" {
-				tb.Send(ctx, assoc.GroupID, tolgee.T("telegrambot.deletecommand.ownerdeleted", lang))
-				continue
-			}
-
-			// Demote if admin
-			if chatMember.Administrator != nil && chatMember.Administrator.Status == "administrator" {
-				tb.DemoteUser(ctx, assoc.GroupID, userID)
-			}
-
-			// Kick user
-			tb.KickUser(ctx, assoc.GroupID, userID)
+		if err := DeleteMemberEverywhere(ctx, userID, lang); err != nil {
+			tb.AnswerCallbackSilent(ctx, q.ID)
+			tb.Send(ctx, chatID, tolgee.T("telegrambot.general.error", lang))
+			return
 		}
-
-		// Delete user from database
-		userRepo.Delete(userID)
-		logger.Info("User deleted", map[string]interface{}{"user_id": userID})
 
 		// Delete the confirmation message
 		tb.DeleteMessage(ctx, chatID, messageID)
@@ -129,4 +117,58 @@ func DeleteCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Updat
 	}
 
 	tb.AnswerCallbackSilent(ctx, q.ID)
+}
+
+// DeleteMemberEverywhere kicks a member out of every group the bot manages and then deletes
+// their row (the group associations cascade with it).
+//
+// It is the single implementation of "remove this member", shared by /elimina and the
+// profile card's delete button — a destructive path duplicated in two places is a path
+// where only one copy gets the next bug fix.
+//
+// A group lookup failure ABORTS: deleting the row first would cascade the associations
+// away and destroy the only record of which groups the member still needs kicking from.
+func DeleteMemberEverywhere(ctx context.Context, userID int64, lang string) error {
+	userRepo := database.NewUserRepository()
+	groupAssocRepo := database.NewGroupAssociationRepository()
+
+	groups, err := groupAssocRepo.GetUserGroups(userID)
+	if err != nil {
+		logger.Error("Failed to load user groups, aborting deletion", map[string]interface{}{
+			"error":   err.Error(),
+			"user_id": userID,
+		})
+		return err
+	}
+
+	for _, assoc := range groups {
+		chatMember, err := tb.GetChatMember(ctx, assoc.GroupID, userID)
+		if err != nil {
+			continue
+		}
+
+		// An owner cannot be kicked by a bot — Telegram forbids it. Tell the group instead.
+		if chatMember.Owner != nil && chatMember.Owner.Status == "creator" {
+			tb.Send(ctx, assoc.GroupID, tolgee.T("telegrambot.deletecommand.ownerdeleted", lang))
+			continue
+		}
+
+		// An admin must be demoted before they can be kicked.
+		if chatMember.Administrator != nil && chatMember.Administrator.Status == "administrator" {
+			tb.DemoteUser(ctx, assoc.GroupID, userID)
+		}
+
+		tb.KickUser(ctx, assoc.GroupID, userID)
+	}
+
+	if err := userRepo.Delete(userID); err != nil {
+		logger.Error("Failed to delete user", map[string]interface{}{
+			"error":   err.Error(),
+			"user_id": userID,
+		})
+		return err
+	}
+
+	logger.Info("User deleted", map[string]interface{}{"user_id": userID, "groups": len(groups)})
+	return nil
 }
