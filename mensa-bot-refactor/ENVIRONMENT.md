@@ -46,6 +46,27 @@ password, so it would have to be duplicated into a second secret alongside the o
 itself reads (`POSTGRES_PASSWORD_FILE`) — and the two would drift on the first rotation. With
 `DB_PASSWORD_FILE`, both services read the *same* secret. See `DEPLOY.md`.
 
+## MTProto (group member enumeration)
+
+The Bot API **cannot list a group's members** — no such method exists. MTProto, the protocol
+the official clients speak, can. Without these the bot still runs, but a bot added to a group
+that already holds people sees **none of them**: they stay invisible to `/elimina`, to
+`/profilo`'s group list, and to the cleanup sweep. It logs a warning on every promotion.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TG_API_ID` | (empty) | From <https://my.telegram.org>. Identifies the *application*, not a user. |
+| `TG_API_HASH` | (empty) | Ditto. Prefer `TG_API_HASH_FILE` in Swarm. |
+
+Required **in addition** to `BOT_TOKEN`: MTProto bot auth is
+`importBotAuthorization(api_id, api_hash, bot_token)`. Getting them is an interactive login on
+a personal Telegram account, but the resulting pair is not a session and grants no access to
+that account's messages or contacts.
+
+Enumeration runs when the bot is **promoted to administrator** in a group (`getParticipants`
+returns `CHAT_ADMIN_REQUIRED` to a plain member). The MTProto connection is opened on demand
+and closed immediately after; it coexists with the Bot API long-poll on the same token.
+
 ## Secrets (`*_FILE`)
 
 **Any** variable can be supplied indirectly using the conventional Docker suffix: set
