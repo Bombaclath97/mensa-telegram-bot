@@ -1,0 +1,47 @@
+# Development overlay: runs the bot against a FAKE Mensa API instead of the real one.
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up --build
+#
+# The two services sit on the same compose network and address each other by service name,
+# which is what makes the round trip work:
+#
+#   mensa-bot  --POST /v1/request (callme_url=http://mensa-bot:8080/callme_api/<token>)-->  mock-mensa-api
+#   mensa-bot  <--POST /callme_api/<token> {"accepted":true}--------------------------------  mock-mensa-api
+#
+# That callback is the whole reason the mock exists: it impersonates the official Mensa app,
+# and without it registration can never complete.
+#
+# NEVER use this overlay against the production bot token.
+services:
+  mensa-bot:
+    environment:
+      # Point the bot at the mock instead of the real (unreachable) api.mensa.it.
+      API_ENDPOINT: http://mock-mensa-api:8081/v1
+      # The URL the "Mensa app" calls back. It must be reachable FROM THE MOCK, so it is the
+      # bot's service name — not localhost, which inside the mock's container is the mock.
+      CALLME_BASE_URL: http://mensa-bot:8080/callme_api
+      LOG_LEVEL: debug
+    depends_on:
+      mock-mensa-api:
+        condition: service_started
+
+  mock-mensa-api:
+    build: ./mock-mensa-api
+    container_name: mock-mensa-api
+    environment:
+      LISTEN_ADDR: ":8081"
+      # auto = approve every request after the delay (happy path).
+      # reject = the member taps "no" in the app.
+      # manual = fire nothing; you POST /_control/approve/{token} yourself.
+      MOCK_APPROVE_MODE: auto
+      MOCK_CALLBACK_DELAY: 2s
+      # Seeded members: one active, one expired (the expired one exercises the cleanup sweep).
+      # Format: email:member_number:name:active|expired
+      MOCK_MEMBERS: "mario.rossi@mensa.it:12345:Mario Rossi:active,anna.bianchi@mensa.it:67890:Anna Bianchi:expired"
+      # false => an unknown (email, number) pair returns 404, so the "you are not a member"
+      # path stays reachable. Set true to accept anything.
+      MOCK_ACCEPT_ANY: "false"
+    ports:
+      # Published so you can drive the control API from the host.
+      - "8081:8081"
+    restart: unless-stopped

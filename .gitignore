@@ -178,3 +178,11 @@ dist
 git-crypt-key
 
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Built service binary (produced by `go build` at the module root).
+/mensa-bot-refactor/mensa-bot
+# Tolgee on-disk fallback cache.
+tolgee-cache.json

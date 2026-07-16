@@ -1,0 +1,15 @@
+# Secrets and local state — never commit these.
+.env
+
+# Built service binary (`go build .` at the module root produces ./mensa-bot).
+/mensa-bot
+mensa-bot
+
+# SQLite database and its sidecar files.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Tolgee on-disk fallback cache.
+tolgee-cache.json

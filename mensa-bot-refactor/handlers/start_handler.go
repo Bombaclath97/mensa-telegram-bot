@@ -33,8 +33,19 @@ func StartCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update)
 	}
 
 	userRepo := database.NewUserRepository()
-	user, _ := userRepo.GetByID(userID)
 	lang := userRepo.GetLanguage(userID)
+
+	// G21: (nil, nil) means "not registered", (nil, err) means the query FAILED.
+	// Conflating them told registered members they were not registered.
+	user, err := userRepo.GetByID(userID)
+	if err != nil {
+		logger.Error("Failed to look up user", map[string]interface{}{
+			"error":   err.Error(),
+			"user_id": userID,
+		})
+		tb.Send(ctx, chatID, tolgee.T("telegrambot.general.error", lang))
+		return
+	}
 
 	if user == nil {
 		// User not registered
