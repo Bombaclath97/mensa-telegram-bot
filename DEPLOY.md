@@ -22,6 +22,32 @@ Moving to Postgres did not change any of this. Do not raise `replicas`.
 What Swarm *does* buy here: rolling updates, real secrets, restart policy, and Portainer
 management. It does **not** buy high availability. See "The data pins the stack" below.
 
+## If you only have the Portainer UI
+
+Everything below is doable from the web interface — no SSH, no docker CLI. The UI paths:
+
+| step | where in Portainer |
+| ---- | ------------------ |
+| 1. Label the data node | **Swarm → Nodes → _(pick the node)_ → Labels → Add label** — name `mensa-data`, value `true` |
+| 2. Create the five secrets | **Secrets → Add secret** (×5, names exactly as below) |
+| 3. Check the Traefik network | **Networks** — `traefik-public` must already be listed |
+| 4. Deploy | **Stacks → Add stack → Repository** |
+
+Notes for the UI route specifically:
+
+- **Do step 1 first.** The stack constrains Postgres to `node.labels.mensa-data == true`. If no
+  node carries that label the service never schedules — it sits `Pending` forever with "no
+  suitable node", which reads like a broken stack rather than a missing label. Set it even on a
+  single-node swarm.
+- **Secret names must match exactly** (`mensa_bot_token`, `mensa_api_bearer_token`,
+  `mensa_tolgee_api_key`, `mensa_db_password`, `mensa_tg_api_hash`); the stack declares them
+  `external`.
+- **Paste secret values with no trailing newline.** Portainer sends the textarea contents
+  verbatim, and a stray Enter at the end of `BOT_TOKEN` gives a 404 from Telegram that looks
+  exactly like a wrong token. The bot trims whitespace defensively
+  (`config.ExpandFileSecrets`), so this is covered — but don't rely on it.
+- The image is **public**, so Portainer needs no registry credentials.
+
 ## Prerequisites
 
 ### 1. An image in GHCR
@@ -30,7 +56,14 @@ management. It does **not** buy high availability. See "The data pins the stack"
 `.github/workflows/ci.yml` publishes to `ghcr.io/bombaclath97/mensa-telegram-bot` on every
 push to `main` and every `v*` tag.
 
-Make the package public, or add a registry credential to the swarm:
+The package is currently **public**, so no registry credentials are needed — Portainer and
+Swarm can both pull it anonymously. Verify any time with:
+
+```sh
+docker manifest inspect ghcr.io/bombaclath97/mensa-telegram-bot:latest
+```
+
+If it is ever made private, add a registry credential to the swarm instead:
 
 ```sh
 docker login ghcr.io -u <user>   # then deploy with --with-registry-auth
@@ -57,8 +90,14 @@ docker node update --label-add mensa-data=true <node>
 printf '%s' '<bot token>'          | docker secret create mensa_bot_token -
 printf '%s' '<mensa api bearer>'   | docker secret create mensa_api_bearer_token -
 printf '%s' '<tolgee api key>'     | docker secret create mensa_tolgee_api_key -
+printf '%s' '<telegram api_hash>'  | docker secret create mensa_tg_api_hash -
 openssl rand -base64 32 | tr -d '\n' | docker secret create mensa_db_password -
 ```
+
+`TG_API_ID` (plain env var) and `mensa_tg_api_hash` come from <https://my.telegram.org>. They
+are what let the bot SEE who is already inside a group: the Bot API has no method to list
+members, so without them a bot added to a 500-member group sees none of them. They identify
+the *application*, not a user — they grant no access to the account that registered them.
 
 **Use `printf`, not `echo`.** `echo` appends a newline, and a `BOT_TOKEN` ending in `\n`
 produces a 404 from Telegram that looks exactly like a wrong token. The bot trims whitespace
