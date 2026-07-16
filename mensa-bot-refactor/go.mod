@@ -1,6 +1,6 @@
 module github.com/Bombaclath97/mensa-telegram-bot
 
-go 1.25.4
+go 1.26.5
 
 require (
 	github.com/go-resty/resty/v2 v2.17.1

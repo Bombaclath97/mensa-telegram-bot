@@ -9,7 +9,12 @@
 # the runtime. The Postgres driver (jackc/pgx) is pure Go, so both constraints
 # are gone.
 # ---------------------------------------------------------------------------
-FROM golang:1.25-bookworm AS build
+# Pinned to the 1.26 line: every vulnerability govulncheck reports against this
+# codebase is in the Go standard library, so the TOOLCHAIN VERSION *is* the fix.
+# The floating minor tag means a rebuild picks up each new patch release; go.mod
+# additionally requires >= 1.26.5, so an older builder would refuse rather than
+# silently produce a vulnerable binary.
+FROM golang:1.26-bookworm AS build
 
 WORKDIR /src
 
