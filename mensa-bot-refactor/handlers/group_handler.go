@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"context"
+	"errors"
 
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Bombaclath97/mensa-telegram-bot/mtproto"
 	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
 	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
 	"github.com/go-telegram/bot"
@@ -92,6 +94,119 @@ func MyChatMemberHandler(ctx context.Context, b *bot.Bot, update *models.Update)
 	// Sync the group's human admins in both cases. When the bot is only a plain member it
 	// usually cannot call getChatAdministrators; the call simply fails and is logged.
 	groupSyncAdmins(ctx, groupID)
+
+	// Enumerate the people who were ALREADY in the group, but only once we are an admin.
+	//
+	// WHY GATED ON `promoted` AND NOT `joined`: channels.getParticipants returns
+	// CHAT_ADMIN_REQUIRED to a plain member, and a bot is very often added as a member first
+	// and promoted minutes later. Enumerating on `joined` would therefore fail for the common
+	// case and leave everyone in the group invisible forever. Telegram tells us the moment we
+	// gain the right — this is that moment, so we use it instead of retrying blindly.
+	//
+	// A bot added DIRECTLY as an administrator satisfies both branches (see the note on
+	// MyChatMemberHandler), so that case is covered too and runs exactly once.
+	if promoted {
+		groupEnumerateExistingMembers(ctx, groupID)
+	}
+}
+
+// groupEnumerateExistingMembers reads the group's full member list over MTProto and records an
+// association for everyone in it who is already a registered member.
+//
+// # Why this cannot be done any other way
+//
+// groups_associations is only ever written when a JOIN REQUEST is approved. Someone already
+// sitting in the group when the bot arrives never issues one, so the bot holds no record of
+// them: the cleanup sweep cannot kick them, /elimina cannot remove them, and /profilo shows
+// them no groups. Add the bot to a 500-member group and all 500 are invisible.
+//
+// The Bot API cannot list members — there is no such method. MTProto can (see the mtproto
+// package), and this is the only moment we learn who is in the room.
+//
+// Best-effort by design: a failure here must never stop the bot joining a group. The members
+// stay invisible, which is exactly the status quo before this ran.
+func groupEnumerateExistingMembers(ctx context.Context, groupID int64) {
+	if !mtproto.Configured() {
+		// Not an error: the bot works without MTProto, it just cannot see members who never
+		// issued a join request. Warn, because that is a silent and surprising degradation.
+		logger.Warn("Group enumeration skipped: MTProto is not configured (TG_API_ID/TG_API_HASH). "+
+			"Members who were already in this group will stay invisible to /elimina, /profilo and the cleanup sweep",
+			map[string]interface{}{"group_id": groupID})
+		return
+	}
+
+	members, err := mtproto.Enumerate(ctx, groupID)
+	if err != nil {
+		switch {
+		case errors.Is(err, mtproto.ErrAdminRequired):
+			// Should not happen on the `promoted` branch, but harmless if it does: the next
+			// promotion event retries.
+			logger.Warn("Group enumeration skipped: not an administrator yet", map[string]interface{}{
+				"group_id": groupID,
+			})
+		case errors.Is(err, mtproto.ErrParticipantsHidden):
+			// A hard stop, deliberately. A hidden list means any enumeration is PARTIAL, and a
+			// partial list would later classify verified members as unprofiled.
+			logger.Error("Group enumeration REFUSED: the participant list is hidden, so any read "+
+				"would be incomplete. Ask the group admins to unhide members, then re-promote the bot",
+				map[string]interface{}{"group_id": groupID})
+		default:
+			logger.Error("Group enumeration failed", map[string]interface{}{
+				"group_id": groupID,
+				"error":    err.Error(),
+			})
+		}
+		return
+	}
+
+	userRepo := database.NewUserRepository()
+	assocRepo := database.NewGroupAssociationRepository()
+
+	var (
+		associated   int
+		unregistered int
+	)
+
+	for _, member := range members {
+		// Bots and deleted accounts have no Mensa profile by definition.
+		if member.IsBot || member.Deleted {
+			continue
+		}
+
+		registered, err := userRepo.Exists(member.UserID)
+		if err != nil {
+			logger.Error("Group enumeration: could not check registration", map[string]interface{}{
+				"group_id": groupID,
+				"user_id":  member.UserID,
+				"error":    err.Error(),
+			})
+			continue
+		}
+		if !registered {
+			// These are the people the grace-period kicker will eventually target. Counting
+			// them is all this does for now — the roster and the 7-day clock are a separate
+			// piece of work (see CUTOVER.md).
+			unregistered++
+			continue
+		}
+
+		if err := assocRepo.Register(member.UserID, groupID); err != nil {
+			logger.Error("Group enumeration: could not write the association", map[string]interface{}{
+				"group_id": groupID,
+				"user_id":  member.UserID,
+				"error":    err.Error(),
+			})
+			continue
+		}
+		associated++
+	}
+
+	logger.Info("Group enumeration complete", map[string]interface{}{
+		"group_id":     groupID,
+		"members":      len(members),
+		"associated":   associated,
+		"unregistered": unregistered,
+	})
 }
 
 // groupIsInsideStatus reports whether the given status means the bot is present in the chat.

@@ -1,7 +1,17 @@
-# Cutover: gating existing groups
+# Onboarding a populated group
 
-How the bot takes over a Mensa group that is **already full of people**, and removes the
-ones who never verify. This is a one-time process per group, not a standing feature.
+How the bot takes over a Mensa group that is **already full of people**, and removes the ones
+who never verify.
+
+> **This document previously called it a "one-time cutover". That was wrong.** A bot being
+> added to a populated group is not a migration that happens once — it is a **recurring
+> product event**. Add the bot to a group with 500 people in it and all 500 are invisible,
+> today, tomorrow, and every time it happens again. So enumeration is core runtime behaviour
+> and lives **in the bot** (`mtproto/`), triggered by the promotion event. It is not a
+> migration tool, and MTProto is not confined to a migration path.
+>
+> Everything about the *member-facing* flow below (the timeline, the deep link, the
+> exemptions, the kick) is unchanged. Only the framing and the trigger were wrong.
 
 Everything below is a design contract, agreed before implementation. If the code and this
 document disagree, one of them is a bug.
@@ -27,13 +37,13 @@ request. So the bot has no record of them, and three things silently break:
 
 ## The two populations
 
-This is the load-bearing distinction. **They need different mechanisms, and only one of them
-needs building.**
+This is the load-bearing distinction. **They need different mechanisms, and both live side by
+side permanently** — it is not one-then-the-other.
 
 | | pending join request? | can the bot DM them? | handled by |
 | --- | --- | --- | --- |
-| **Newcomer** (at the door) | yes | **yes** — `ChatJoinRequest.user_chat_id` grants a 5-minute window | the existing gate. Nothing to build. |
-| **Legacy member** (already inside) | no | **no** — no request, no window | this document |
+| **Newcomer** (at the door) | yes | **yes** — `ChatJoinRequest.user_chat_id` grants a 5-minute window | the existing join-request gate |
+| **Already inside** when the bot arrives | no | **no** — no request, no window | enumeration + this document |
 
 A bot cannot normally start a conversation; the user must press Start first. The join-request
 window is the *only* exception, and it is granted by the act of requesting to join. Legacy
@@ -47,10 +57,22 @@ decision below follows from that one fact.
 One cohort per group. The clock starts at that group's snapshot, so everyone in the group
 shares a single deadline and a single announcement.
 
-### Day 0 — snapshot
+### Day 0 — snapshot, triggered by the bot being PROMOTED
 
-Enumerate the group over MTProto (`mtproto-roster/`), classify every member, write roster
+Enumerate the group over MTProto (`mtproto/`, in the bot), classify every member, write roster
 rows with a shared deadline of +7 days.
+
+**The trigger is `promoted`, not `joined`** (`handlers/group_handler.go`).
+`channels.getParticipants` returns `CHAT_ADMIN_REQUIRED` to a plain member, and a bot is very
+often added as a member and promoted minutes later. Enumerating on `joined` would fail for the
+common case and leave everyone invisible forever. Telegram tells us the exact moment the right
+is granted, so we wait for it rather than retry blindly. A bot added *directly* as an admin
+satisfies both branches and is covered.
+
+Verified by experiment: an MTProto session and the Bot API's `getUpdates` long-poll run
+**concurrently on the same bot token** with no conflict — 12/12 polls returned `ok=True`
+during a full enumeration. No 409, no session eviction. The connection is opened on demand and
+closed straight after; enumeration happens a handful of times ever.
 
 **Pre-flight, and abort loudly on failure:**
 

@@ -35,6 +35,20 @@ services:
       BOT_TOKEN_FILE: /run/secrets/mensa_bot_token
       API_BEARER_TOKEN_FILE: /run/secrets/mensa_api_bearer_token
 
+      # MTProto — the ONLY way to see who is already inside a group.
+      #
+      # The Bot API cannot list group members (no such method exists). Without these, a bot
+      # added to a 500-member group sees NONE of them: they are invisible to /elimina, to
+      # /profilo's group list, and to the cleanup sweep. The bot still runs — it just cannot
+      # enumerate — and logs a warning every time it is promoted in a group.
+      #
+      # api_id/api_hash come from https://my.telegram.org (an interactive login on a personal
+      # account). They identify the APPLICATION, not a user: they grant no access to that
+      # account's messages or contacts. Required IN ADDITION to BOT_TOKEN, because MTProto bot
+      # auth is importBotAuthorization(api_id, api_hash, bot_token).
+      TG_API_ID: ${TG_API_ID:?set TG_API_ID, from https://my.telegram.org}
+      TG_API_HASH_FILE: /run/secrets/mensa_tg_api_hash
+
       API_ENDPOINT: ${API_ENDPOINT:?set API_ENDPOINT}
       CALLME_BASE_URL: ${CALLME_BASE_URL:?set CALLME_BASE_URL, the PUBLIC origin + /callme_api}
       ADMIN_TELEGRAM_IDS: ${ADMIN_TELEGRAM_IDS:-}
@@ -58,6 +72,7 @@ services:
       - mensa_bot_token
       - mensa_api_bearer_token
       - mensa_tolgee_api_key
+      - mensa_tg_api_hash
 
     networks:
       - mensa-internal
@@ -197,4 +212,8 @@ secrets:
   mensa_api_bearer_token:
     external: true
   mensa_tolgee_api_key:
+    external: true
+  # The MTProto app hash. A secret, though a mild one: it identifies the APPLICATION, not a
+  # user, and grants no access to the account that registered it.
+  mensa_tg_api_hash:
     external: true
