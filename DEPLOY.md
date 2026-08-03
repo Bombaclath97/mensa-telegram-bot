@@ -112,8 +112,8 @@ the stack at it, redeploying, then removing the old one.
 ### 4. The Traefik network
 
 `traefik-mensa` must already exist and Traefik must be running with a cert resolver. The
-stack only routes `Host(`telegrambot.svc.mensa.it`) && PathPrefix("/callme_api")` — `/health`
-is deliberately not public.
+stack routes the whole host, `Host(`telegrambot.svc.mensa.it`)`, so both `/callme_api` and
+`/health` are publicly reachable.
 
 > If your `traefik-mensa` is an `internal` network, the bot will start, reach Postgres, and
 > then silently fail every outbound call (Telegram, Mensa API, Tolgee). It gets its egress
@@ -129,7 +129,6 @@ Set these where you deploy (Portainer's stack env, or your shell):
 | `CALLME_BASE_URL` | yes | **public** origin + `/callme_api` — `https://telegrambot.svc.mensa.it/callme_api`; anything else 404s every approval |
 | `ADMIN_TELEGRAM_IDS` | no | comma-separated; blank disables `/manual_add` for everyone |
 | `MENSA_BOT_IMAGE` | no | defaults to `:latest` |
-| `TRAEFIK_CERT_RESOLVER` | no | defaults to `letsencrypt` |
 | `CLEANUP_DRY_RUN` | no | **defaults to `true`** — read below before changing |
 
 ## Deploy
