@@ -51,11 +51,9 @@ func main() {
 	// Initialize logger
 	logger.Init(os.Getenv("LOG_LEVEL"))
 
-	// Initialize Tolgee translations.
-	// Called UNCONDITIONALLY: the CDN and the on-disk cache tiers work with no API
-	// key at all, so guarding this on TOLGEE_API_KEY would needlessly render raw keys.
+	// Initialize Tolgee translations from the public CDN (no API key).
 	// A translation outage must never stop the bot, so this is a Warn, not a Fatal.
-	if err := tolgee.Load(os.Getenv("TOLGEE_API_KEY")); err != nil {
+	if err := tolgee.Load(); err != nil {
 		logger.Warn("Failed to load Tolgee translations, the bot will render raw keys",
 			map[string]interface{}{"error": err.Error()})
 	} else {
