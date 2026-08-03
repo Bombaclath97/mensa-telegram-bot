@@ -75,7 +75,7 @@ services:
 
     networks:
       - mensa-internal
-      - traefik-public
+      - traefik-mensa
 
     deploy:
       # ---------------------------------------------------------------------------------
@@ -109,12 +109,12 @@ services:
         # the container. Putting these at the service top level is the classic Swarm+Traefik
         # bug: they are silently ignored and nothing routes, with no error anywhere.
         - traefik.enable=true
-        - traefik.docker.network=traefik-public
+        - traefik.docker.network=traefik-mensa
 
         # PathPrefix is a security boundary, not tidiness. The ONLY thing that needs to be
         # reachable from the internet is the Mensa app's callback. /health exists for the
         # orchestrator; routing it publicly hands anyone a free liveness oracle for the bot.
-        - traefik.http.routers.mensa-bot.rule=Host(`${MENSA_BOT_HOST:?set MENSA_BOT_HOST}`) && PathPrefix(`/callme_api`)
+        - traefik.http.routers.mensa-bot.rule=Host(`telegrambot.svc.mensa.it`) && PathPrefix(`/callme_api`)
         - traefik.http.routers.mensa-bot.entrypoints=websecure
         - traefik.http.routers.mensa-bot.tls=true
         - traefik.http.routers.mensa-bot.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}
@@ -172,13 +172,13 @@ networks:
     # joins this network. `internal: true` removes the gateway, so this network has no egress.
     #
     # That is fine for postgres, which needs none. The BOT needs plenty (Telegram, the Mensa
-    # API, Tolgee) and gets it from traefik-public below — which works because a standard
-    # traefik-public is NOT internal. If yours is, the bot will start, connect to Postgres,
+    # API, Tolgee) and gets it from traefik-mensa below — which works because a standard
+    # traefik network is NOT internal. If yours is, the bot will start, connect to Postgres,
     # and then silently fail every outbound call: attach it to an egress-capable network too.
     internal: true
     attachable: false
 
-  traefik-public:
+  traefik-mensa:
     external: true
 
 volumes:
