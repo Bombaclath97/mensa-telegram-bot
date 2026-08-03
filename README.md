@@ -131,7 +131,6 @@ for a template to copy. The essentials:
 | `ADMIN_TELEGRAM_IDS` | no       | Comma-separated Telegram IDs flagged as bot admins.    |
 | `DATABASE_URL`       | yes*     | Postgres DSN. *Or the discrete `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` form. |
 | `HTTP_ADDR`          | no       | Bind address (default `:8080`).                        |
-| `TOLGEE_API_KEY`     | no       | Tolgee project key for translations.                   |
 
 ## Running
 

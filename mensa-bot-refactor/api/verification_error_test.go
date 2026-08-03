@@ -29,6 +29,12 @@ func TestRequestVerificationDistinguishesNotFoundFromUnavailable(t *testing.T) {
 		{name: "502 is not a negative", status: http.StatusBadGateway, wantNotFound: false, wantErr: true},
 		{name: "429 rate limit is not a negative", status: http.StatusTooManyRequests, wantNotFound: false, wantErr: true},
 		{name: "408 timeout is not a negative", status: http.StatusRequestTimeout, wantNotFound: false, wantErr: true},
+
+		// 401/403 are about OUR credentials, not the member. Reporting them as "not a member"
+		// tells a real Mensa member their details are wrong because API_BEARER_TOKEN is stale
+		// — untrue, and it sends them hunting for a problem that isn't theirs.
+		{name: "401 is about our token, not the member", status: http.StatusUnauthorized, wantNotFound: false, wantErr: true},
+		{name: "403 is about our token, not the member", status: http.StatusForbidden, wantNotFound: false, wantErr: true},
 	}
 
 	for _, tc := range tests {

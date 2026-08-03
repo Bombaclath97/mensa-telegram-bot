@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Bombaclath97/mensa-telegram-bot/logger"
 )
 
 // DefaultTimeout bounds every call to the Mensa Italia API.
@@ -54,13 +56,21 @@ func NewMensaAPIClient() *MensaAPIClient {
 	}
 }
 
+// url is the full URL for a path. API_ENDPOINT is a BASE: the paths below are appended to
+// it, so https://host/api/cs/exapp + "request" -> https://host/api/cs/exapp/request.
+func (c *MensaAPIClient) url(path string) string {
+	return fmt.Sprintf("%s/%s", c.endpoint, path)
+}
+
 func (c *MensaAPIClient) post(ctx context.Context, path string, form url.Values) (*http.Response, error) {
 	if c.endpoint == "" {
 		return nil, fmt.Errorf("mensa api: API_ENDPOINT is not set")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		fmt.Sprintf("%s/%s", c.endpoint, path), strings.NewReader(form.Encode()))
+	url := c.url(path)
+	logger.Info("mensa api: sending request", map[string]interface{}{"url": url})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("mensa api: failed to create request: %w", err)
 	}
@@ -70,8 +80,9 @@ func (c *MensaAPIClient) post(ctx context.Context, path string, form url.Values)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("mensa api: request to /%s failed: %w", path, err)
+		return nil, fmt.Errorf("mensa api: POST %s failed: %w", url, err)
 	}
+	logger.Info("mensa api: response", map[string]interface{}{"url": url, "status": resp.StatusCode})
 	return resp, nil
 }
 
@@ -87,7 +98,7 @@ func (c *MensaAPIClient) CheckMembershipValidity(ctx context.Context, memberNumb
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("mensa api: /valid returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("mensa api: POST %s returned status %d", c.url("valid"), resp.StatusCode)
 	}
 
 	var result CheckValidityResponse
@@ -139,12 +150,17 @@ func (c *MensaAPIClient) RequestVerification(ctx context.Context, email string, 
 		return nil
 	}
 
+	// 401/403 are about OUR token, not the member.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("mensa api: POST %s returned %d, check API_BEARER_TOKEN", c.url("request"), resp.StatusCode)
+	}
+
 	// 4xx is the API telling us the pair is not a member. 408/429 are about the request
 	// itself, not the member, so they are retryable rather than definitive.
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
 		resp.StatusCode != http.StatusRequestTimeout && resp.StatusCode != http.StatusTooManyRequests {
-		return fmt.Errorf("%w (status %d)", ErrMemberNotFound, resp.StatusCode)
+		return fmt.Errorf("%w (status %d from POST %s)", ErrMemberNotFound, resp.StatusCode, c.url("request"))
 	}
 
-	return fmt.Errorf("mensa api: /request returned status %d", resp.StatusCode)
+	return fmt.Errorf("mensa api: POST %s returned status %d", c.url("request"), resp.StatusCode)
 }

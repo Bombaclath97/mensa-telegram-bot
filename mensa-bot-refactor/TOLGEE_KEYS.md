@@ -234,6 +234,6 @@ translated into all 10.
 | `hi` | Hindi             |
 | `bn` | Bangla            |
 
-> Note: without `TOLGEE_API_KEY` the bot cannot fetch the language list and falls
-> back to the CDN with a default tag set of `it/en/es/de` only. Set the API key in
-> production so all 10 languages load.
+> Note: translations load from the public CDN, which has no language index, so the
+> tag list above is built into the bot (`defaultLanguageTags` in `tolgee/tolgee.go`).
+> Adding a language to the Tolgee project means adding its tag there too.

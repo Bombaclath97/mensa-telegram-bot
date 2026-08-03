@@ -40,8 +40,7 @@ Notes for the UI route specifically:
   suitable node", which reads like a broken stack rather than a missing label. Set it even on a
   single-node swarm.
 - **Secret names must match exactly** (`mensa_bot_token`, `mensa_api_bearer_token`,
-  `mensa_tolgee_api_key`, `mensa_db_password`, `mensa_tg_api_hash`); the stack declares them
-  `external`.
+  `mensa_db_password`, `mensa_tg_api_hash`); the stack declares them `external`.
 - **Paste secret values with no trailing newline.** Portainer sends the textarea contents
   verbatim, and a stray Enter at the end of `BOT_TOKEN` gives a 404 from Telegram that looks
   exactly like a wrong token. The bot trims whitespace defensively
@@ -89,7 +88,6 @@ docker node update --label-add mensa-data=true <node>
 ```sh
 printf '%s' '<bot token>'          | docker secret create mensa_bot_token -
 printf '%s' '<mensa api bearer>'   | docker secret create mensa_api_bearer_token -
-printf '%s' '<tolgee api key>'     | docker secret create mensa_tolgee_api_key -
 printf '%s' '<telegram api_hash>'  | docker secret create mensa_tg_api_hash -
 openssl rand -base64 32 | tr -d '\n' | docker secret create mensa_db_password -
 ```
