@@ -56,7 +56,7 @@ services:
       HTTP_ADDR: ":8080"
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
-      TOLGEE_API_KEY_FILE: /run/secrets/mensa_tolgee_api_key
+      # Translations come from the public Tolgee CDN — no API key, no secret.
       # /tmp is writable in the distroless image and the cache is expendable — losing it just
       # costs a re-fetch. Nothing here needs a volume.
       TOLGEE_CACHE_PATH: /tmp/tolgee-cache.json
@@ -71,7 +71,6 @@ services:
       - mensa_db_password
       - mensa_bot_token
       - mensa_api_bearer_token
-      - mensa_tolgee_api_key
       - mensa_tg_api_hash
 
     networks:
@@ -200,8 +199,6 @@ secrets:
   mensa_bot_token:
     external: true
   mensa_api_bearer_token:
-    external: true
-  mensa_tolgee_api_key:
     external: true
   # The MTProto app hash. A secret, though a mild one: it identifies the APPLICATION, not a
   # user, and grants no access to the account that registered it.

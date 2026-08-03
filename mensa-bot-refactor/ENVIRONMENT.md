@@ -91,12 +91,13 @@ Rules:
 
 ## Translations (Tolgee)
 
-All optional — the CDN and on-disk cache tiers work with no API key, so a
-translation outage never stops the bot (it degrades to rendering raw keys).
+Translations are loaded from the public Tolgee **CDN** (no API key) and cached on
+disk, so a translation outage never stops the bot (it degrades to rendering raw
+keys). The authenticated export API is intentionally not used — a key pointing at
+the wrong project silently serves mismatched keys, rendering every string raw.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `TOLGEE_API_KEY` | (empty) | Tolgee project API key. |
 | `TOLGEE_CACHE_PATH` | `./tolgee-cache.json` | On-disk fallback cache. Docker default: `/tmp/tolgee-cache.json` — writable and expendable, since losing it only costs a re-fetch from the CDN. It no longer defaults next to the database: there is no volume any more. |
 | `TOLGEE_CDN_PROJECT_ID` | (built-in) | Overrides the CDN project ID for the CDN fallback tier. |
 | `TOLGEE_CDN_URL` | (built-in) | Overrides the CDN base URL. |
