@@ -29,8 +29,8 @@ Everything below is doable from the web interface — no SSH, no docker CLI. The
 | step | where in Portainer |
 | ---- | ------------------ |
 | 1. Label the data node | **Swarm → Nodes → _(pick the node)_ → Labels → Add label** — name `mensa-data`, value `true` |
-| 2. Create the five secrets | **Secrets → Add secret** (×5, names exactly as below) |
-| 3. Check the Traefik network | **Networks** — `traefik-public` must already be listed |
+| 2. Create the four secrets | **Secrets → Add secret** (×4, names exactly as below) |
+| 3. Check the Traefik network | **Networks** — `traefik-mensa` must already be listed |
 | 4. Deploy | **Stacks → Add stack → Repository** |
 
 Notes for the UI route specifically:
@@ -111,11 +111,11 @@ the stack at it, redeploying, then removing the old one.
 
 ### 4. The Traefik network
 
-`traefik-public` must already exist and Traefik must be running with a cert resolver. The
-stack only routes `Host(...) && PathPrefix("/callme_api")` — `/health` is deliberately not
-public.
+`traefik-mensa` must already exist and Traefik must be running with a cert resolver. The
+stack only routes `Host(`telegrambot.svc.mensa.it`) && PathPrefix("/callme_api")` — `/health`
+is deliberately not public.
 
-> If your `traefik-public` is an `internal` network, the bot will start, reach Postgres, and
+> If your `traefik-mensa` is an `internal` network, the bot will start, reach Postgres, and
 > then silently fail every outbound call (Telegram, Mensa API, Tolgee). It gets its egress
 > from that network, because `mensa-internal` has none by design.
 
@@ -125,9 +125,8 @@ Set these where you deploy (Portainer's stack env, or your shell):
 
 | variable | required | notes |
 | -------- | -------- | ----- |
-| `MENSA_BOT_HOST` | yes | public hostname Traefik routes |
-| `API_ENDPOINT` | yes | Mensa membership API base URL |
-| `CALLME_BASE_URL` | yes | **public** origin + `/callme_api`; anything else 404s every approval |
+| `API_ENDPOINT` | yes | Mensa membership API base URL, e.g. `https://svc.mensa.it/api/cs/exapp` |
+| `CALLME_BASE_URL` | yes | **public** origin + `/callme_api` — `https://telegrambot.svc.mensa.it/callme_api`; anything else 404s every approval |
 | `ADMIN_TELEGRAM_IDS` | no | comma-separated; blank disables `/manual_add` for everyone |
 | `MENSA_BOT_IMAGE` | no | defaults to `:latest` |
 | `TRAEFIK_CERT_RESOLVER` | no | defaults to `letsencrypt` |
