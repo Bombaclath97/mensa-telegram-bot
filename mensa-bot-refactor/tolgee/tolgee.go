@@ -1,15 +1,16 @@
 // Package tolgee loads the bot's translations and resolves them at runtime.
 //
-// Translations are loaded through a three-tier fallback chain so that a Tolgee
-// outage can never degrade the bot to raw dotted keys:
+// Translations are loaded from the public Tolgee CDN and cached on disk so that
+// a Tolgee outage can never degrade the bot to raw dotted keys:
 //
-//  1. Tolgee export API   (https://app.tolgee.io/v2/projects/export, needs TOLGEE_API_KEY)
-//  2. Tolgee CDN          (https://cdn.tolg.ee/<project>/<lang>.json, no auth)
-//  3. On-disk cache       (TOLGEE_CACHE_PATH — the last successful load)
+//  1. Tolgee CDN     (https://cdn.tolg.ee/<project>/<lang>.json, no auth)
+//  2. On-disk cache  (TOLGEE_CACHE_PATH — the last successful load)
 //
-// Whatever is loaded from tier 1 or 2 is persisted back to the disk cache, so a
-// cold start with both Tolgee and the CDN unreachable degrades to "slightly
-// stale strings" rather than "raw keys".
+// The authenticated export API is intentionally NOT used: it returns whatever
+// project the API key belongs to, and a key pointing at a different project
+// silently serves keys that don't match the bot's, rendering every string raw.
+// Whatever is loaded from the CDN is persisted back to the disk cache, so a cold
+// start with the CDN unreachable degrades to "slightly stale strings".
 package tolgee
 
 import (
@@ -23,7 +24,6 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/tidwall/gjson"
 
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
 )
@@ -51,18 +51,16 @@ const (
 
 	defaultCacheFileName = "tolgee-cache.json"
 	httpTimeout          = 15 * time.Second
-
-	tolgeeLanguagesURL = "https://app.tolgee.io/v2/projects/languages"
-	tolgeeExportURL    = "https://app.tolgee.io/v2/projects/export"
 )
 
-// defaultLanguageTags is the last-resort language list, used only when the
-// Tolgee languages endpoint is unreachable AND the disk cache is empty.
-var defaultLanguageTags = []string{"it", "en", "es", "de"}
+// defaultLanguageTags is the language list asked of the CDN. The CDN has no
+// index endpoint, so the tags are built in; keep this in sync with the Tolgee
+// project (see TOLGEE_KEYS.md). The disk cache widens it on a warm start if the
+// project gains a language before this list is updated.
+var defaultLanguageTags = []string{"it", "en", "es", "de", "fr", "pt", "ja", "zh", "hi", "bn"}
 
 var (
 	mu           sync.RWMutex
-	apiKey       string
 	translations = map[string]Language{}
 	baseLanguage = DefaultBaseLanguage
 )
@@ -73,30 +71,17 @@ var (
 // translations are loaded from the CDN, then from the disk cache. Load only
 // returns an error when NO translation whatsoever could be obtained from any
 // tier — i.e. when the bot would actually render raw keys.
-func Load(ak string) error {
-	mu.Lock()
-	apiKey = strings.TrimSpace(ak)
-	mu.Unlock()
+func Load() error {
 	return Refresh()
 }
 
-// Refresh re-runs the whole load chain with the API key given to Load.
-// Safe to call concurrently with T.
+// Refresh re-runs the whole load chain. Safe to call concurrently with T.
 func Refresh() error {
-	key := currentAPIKey()
-
 	cached, cachedBase := loadDiskCache()
 
-	// Tier 1a: the language list (tags, flags, which one is the base language).
-	langs, err := fetchLanguageList(key)
-	if err != nil {
-		logger.Warn("Tolgee: could not fetch language list, falling back to cached/default language tags", map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
-	if len(langs) == 0 {
-		langs = fallbackLanguageList(cached, cachedBase)
-	}
+	// The CDN has no language index, so the tags come from the disk cache (warm
+	// start) or the built-in default list (cold start).
+	langs := fallbackLanguageList(cached, cachedBase)
 
 	loaded := make(map[string]Language, len(langs))
 	sources := make(map[string]string, len(langs))
@@ -114,7 +99,7 @@ func Refresh() error {
 			base = lang.Tag
 		}
 
-		tr, source := fetchTranslationsFor(key, lang.Tag)
+		tr, source := fetchTranslationsFor(lang.Tag)
 		if len(tr) == 0 {
 			// Tier 3: the last successful load, persisted on disk.
 			if c, ok := cached[lang.Tag]; ok && len(c.Translations) > 0 {
@@ -301,12 +286,6 @@ func EscapeHTML(s string) string {
 	return s
 }
 
-func currentAPIKey() string {
-	mu.RLock()
-	defer mu.RUnlock()
-	return apiKey
-}
-
 func anyTag(m map[string]Language) string {
 	tags := make([]string, 0, len(m))
 	for tag := range m {
@@ -319,51 +298,12 @@ func anyTag(m map[string]Language) string {
 	return tags[0]
 }
 
-// ---------------------------------------------------------------------------
-// tier 1: the Tolgee API
-// ---------------------------------------------------------------------------
-
 func httpClient() *resty.Client {
 	return resty.New().SetTimeout(httpTimeout)
 }
 
-func fetchLanguageList(key string) ([]Language, error) {
-	if key == "" {
-		return nil, fmt.Errorf("TOLGEE_API_KEY is not set")
-	}
-
-	resp, err := httpClient().R().SetQueryParams(map[string]string{
-		"ak":   key,
-		"size": "1000",
-	}).Get(tolgeeLanguagesURL)
-	if err != nil {
-		return nil, err
-	}
-	if resp.IsError() {
-		return nil, fmt.Errorf("languages endpoint returned HTTP %d", resp.StatusCode())
-	}
-
-	entries := gjson.ParseBytes(resp.Body()).Get("_embedded.languages").Array()
-	langs := make([]Language, 0, len(entries))
-	for _, e := range entries {
-		langs = append(langs, Language{
-			Id:           int(e.Get("id").Int()),
-			Name:         e.Get("name").String(),
-			Tag:          e.Get("tag").String(),
-			OriginalName: e.Get("originalName").String(),
-			FlagEmoji:    e.Get("flagEmoji").String(),
-			Base:         e.Get("base").Bool(),
-		})
-	}
-	if len(langs) == 0 {
-		return nil, fmt.Errorf("languages endpoint returned no languages")
-	}
-	return langs, nil
-}
-
-// fallbackLanguageList is used when the languages endpoint is unreachable: we
-// still know WHICH languages to ask the CDN for, either from the disk cache or
-// from the built-in default list.
+// fallbackLanguageList decides WHICH languages to ask the CDN for: the disk
+// cache on a warm start, the built-in default list on a cold start.
 func fallbackLanguageList(cached map[string]Language, cachedBase string) []Language {
 	if len(cached) > 0 {
 		langs := make([]Language, 0, len(cached))
@@ -383,36 +323,20 @@ func fallbackLanguageList(cached map[string]Language, cachedBase string) []Langu
 	return langs
 }
 
-// fetchTranslationsFor tries the export API, then the CDN. It returns an empty
-// map when both fail; every failure is logged with the language and the cause.
-func fetchTranslationsFor(key, tag string) (map[string]string, string) {
-	if key != "" {
-		tr, err := fetchExport(key, tag)
-		switch {
-		case err != nil:
-			logger.Warn("Tolgee: export failed, falling back to the CDN", map[string]interface{}{
-				"language": tag,
-				"error":    err.Error(),
-			})
-		case len(tr) == 0:
-			logger.Warn("Tolgee: export returned no translations, falling back to the CDN", map[string]interface{}{
-				"language": tag,
-			})
-		default:
-			return tr, "tolgee-export"
-		}
-	}
-
+// fetchTranslationsFor loads one language from the CDN. It returns an empty map
+// on failure, logged with the language and the cause; the caller then falls
+// back to the disk cache.
+func fetchTranslationsFor(tag string) (map[string]string, string) {
 	tr, err := fetchFromCDN(tag)
 	switch {
 	case err != nil:
-		logger.Warn("Tolgee: CDN fallback failed", map[string]interface{}{
+		logger.Warn("Tolgee: CDN fetch failed", map[string]interface{}{
 			"language": tag,
 			"url":      cdnURL(tag),
 			"error":    err.Error(),
 		})
 	case len(tr) == 0:
-		logger.Warn("Tolgee: CDN fallback returned no translations", map[string]interface{}{
+		logger.Warn("Tolgee: CDN returned no translations", map[string]interface{}{
 			"language": tag,
 			"url":      cdnURL(tag),
 		})
@@ -423,26 +347,8 @@ func fetchTranslationsFor(key, tag string) (map[string]string, string) {
 	return nil, ""
 }
 
-func fetchExport(key, tag string) (map[string]string, error) {
-	resp, err := httpClient().R().SetQueryParams(map[string]string{
-		"ak":                 key,
-		"size":               "1000",
-		"languages":          tag,
-		"format":             "JSON",
-		"zip":                "false",
-		"structureDelimiter": "",
-	}).Get(tolgeeExportURL)
-	if err != nil {
-		return nil, err
-	}
-	if resp.IsError() {
-		return nil, fmt.Errorf("export endpoint returned HTTP %d", resp.StatusCode())
-	}
-	return decodeTranslations(resp.Body())
-}
-
 // ---------------------------------------------------------------------------
-// tier 2: the Tolgee CDN
+// tier 1: the Tolgee CDN
 // ---------------------------------------------------------------------------
 
 // cdnURL builds https://cdn.tolg.ee/<project>/<lang>.json.
