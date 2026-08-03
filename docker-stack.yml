@@ -108,22 +108,17 @@ services:
         # Traefik reads labels from the SERVICE (i.e. under `deploy`) in Swarm mode, NOT from
         # the container. Putting these at the service top level is the classic Swarm+Traefik
         # bug: they are silently ignored and nothing routes, with no error anywhere.
-        - traefik.enable=true
-        - traefik.docker.network=traefik-mensa
+        - "traefik.enable=true"
+        - "traefik.docker.network=traefik-mensa"
 
-        # PathPrefix is a security boundary, not tidiness. The ONLY thing that needs to be
-        # reachable from the internet is the Mensa app's callback. /health exists for the
-        # orchestrator; routing it publicly hands anyone a free liveness oracle for the bot.
-        - traefik.http.routers.mensa-bot.rule=Host(`telegrambot.svc.mensa.it`) && PathPrefix(`/callme_api`)
-        - traefik.http.routers.mensa-bot.entrypoints=websecure
-        - traefik.http.routers.mensa-bot.tls=true
-        - traefik.http.routers.mensa-bot.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+        # Router — the whole host: /callme_api (the Mensa app callback) and /health.
+        - "traefik.http.routers.mensa-bot.rule=Host(`telegrambot.svc.mensa.it`)"
+        - "traefik.http.routers.mensa-bot.entrypoints=websecure"
+        - "traefik.http.routers.mensa-bot.tls.certresolver=secure"
+        - "traefik.http.routers.mensa-bot.service=mensa-bot-svc"
 
-        - traefik.http.services.mensa-bot.loadbalancer.server.port=8080
-        # Traefik's own health check still uses /health directly against the task, which works
-        # regardless of what the router exposes publicly.
-        - traefik.http.services.mensa-bot.loadbalancer.healthcheck.path=/health
-        - traefik.http.services.mensa-bot.loadbalancer.healthcheck.interval=30s
+        # Service
+        - "traefik.http.services.mensa-bot-svc.loadbalancer.server.port=8080"
 
   # -------------------------------------------------------------------------------------
   # Postgres. This is the ONLY stateful thing left, so it is the only thing pinned.
