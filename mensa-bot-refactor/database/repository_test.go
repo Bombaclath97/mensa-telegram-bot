@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Bombaclath97/mensa-telegram-bot/internal/testdb"
 )
@@ -298,6 +299,175 @@ func TestGroupAssociationRegisterIdempotent(t *testing.T) {
 	rows, _ := assoc.GetUserGroups(21)
 	if len(rows) != 1 {
 		t.Fatalf("idempotent Register produced %d rows, want 1", len(rows))
+	}
+}
+
+// TestMigrateGroupIDToFreshTarget covers the simple case: the supergroup row does not exist
+// yet, so the associations move wholesale.
+func TestMigrateGroupIDToFreshTarget(t *testing.T) {
+	clearAll(t)
+	users := NewUserRepository()
+	groups := NewGroupRepository()
+	assoc := NewGroupAssociationRepository()
+
+	const oldID, newID = -5536498156, -1004435267124
+
+	users.Create(newUserUnique(30))
+	users.Create(newUserUnique(31))
+	assoc.Register(30, oldID)
+	assoc.Register(31, oldID)
+	assoc.PromoteToAdmin(31, oldID)
+
+	if err := groups.MigrateGroupID(oldID, newID); err != nil {
+		t.Fatalf("MigrateGroupID: %v", err)
+	}
+
+	if exists, _ := groups.Exists(oldID); exists {
+		t.Error("the old group row survived the migration")
+	}
+	if exists, _ := groups.Exists(newID); !exists {
+		t.Fatal("the new group row is missing")
+	}
+
+	for _, userID := range []int64{30, 31} {
+		if got, _ := assoc.Get(userID, newID); got == nil {
+			t.Errorf("user %d has no association under the new id", userID)
+		}
+		if got, _ := assoc.Get(userID, oldID); got != nil {
+			t.Errorf("user %d still has an association under the old id", userID)
+		}
+	}
+
+	got, _ := assoc.Get(31, newID)
+	if got == nil || !got.IsGroupAdmin {
+		t.Errorf("admin flag lost in migration: %+v", got)
+	}
+}
+
+// TestMigrateGroupIDMergesIntoExistingTarget is the case a bare
+// `UPDATE groups SET group_id = ...` cannot handle: the destination row ALREADY exists,
+// because group_handler registered the upgraded chat when Telegram announced the bot's
+// membership in it. A plain update would collide on the primary key.
+func TestMigrateGroupIDMergesIntoExistingTarget(t *testing.T) {
+	clearAll(t)
+	users := NewUserRepository()
+	groups := NewGroupRepository()
+	assoc := NewGroupAssociationRepository()
+
+	const oldID, newID = -5536498156, -1004435267124
+
+	users.Create(newUserUnique(40)) // in both
+	users.Create(newUserUnique(41)) // only in the old group
+	users.Create(newUserUnique(42)) // only in the new group
+
+	assoc.Register(40, oldID)
+	assoc.Register(41, oldID)
+	assoc.Register(40, newID)
+	assoc.Register(42, newID)
+
+	if err := groups.MigrateGroupID(oldID, newID); err != nil {
+		t.Fatalf("MigrateGroupID: %v", err)
+	}
+
+	if exists, _ := groups.Exists(oldID); exists {
+		t.Error("the old group row survived the migration")
+	}
+
+	for _, userID := range []int64{40, 41, 42} {
+		if got, _ := assoc.Get(userID, newID); got == nil {
+			t.Errorf("user %d is missing from the merged group", userID)
+		}
+	}
+
+	rows, _ := assoc.GetUserGroups(40)
+	if len(rows) != 1 {
+		t.Errorf("user 40 has %d associations after the merge, want 1 (deduplicated)", len(rows))
+	}
+}
+
+// TestMigrateGroupIDNeverDemotes: a member who was an admin under the OLD id but a plain
+// member under the new one must stay an admin. Overwriting instead of OR-ing would silently
+// strip their rights during what is meant to be a transparent id change.
+func TestMigrateGroupIDNeverDemotes(t *testing.T) {
+	clearAll(t)
+	users := NewUserRepository()
+	groups := NewGroupRepository()
+	assoc := NewGroupAssociationRepository()
+
+	const oldID, newID = -5536498156, -1004435267124
+
+	users.Create(newUserUnique(50))
+	assoc.Register(50, oldID)
+	assoc.PromoteToAdmin(50, oldID)
+	assoc.Register(50, newID) // present but NOT an admin here
+
+	if err := groups.MigrateGroupID(oldID, newID); err != nil {
+		t.Fatalf("MigrateGroupID: %v", err)
+	}
+
+	got, _ := assoc.Get(50, newID)
+	if got == nil || !got.IsGroupAdmin {
+		t.Errorf("migration demoted an admin: %+v", got)
+	}
+}
+
+// TestMigrateGroupIDIsIdempotent: the repair script and the two self-healing code paths can
+// all fire for the same upgrade, so a second run must be a no-op rather than an error.
+func TestMigrateGroupIDIsIdempotent(t *testing.T) {
+	clearAll(t)
+	users := NewUserRepository()
+	groups := NewGroupRepository()
+	assoc := NewGroupAssociationRepository()
+
+	const oldID, newID = -5536498156, -1004435267124
+
+	users.Create(newUserUnique(60))
+	assoc.Register(60, oldID)
+
+	for i := 0; i < 3; i++ {
+		if err := groups.MigrateGroupID(oldID, newID); err != nil {
+			t.Fatalf("MigrateGroupID iteration %d: %v", i, err)
+		}
+	}
+
+	rows, _ := assoc.GetUserGroups(60)
+	if len(rows) != 1 {
+		t.Errorf("user 60 has %d associations, want 1", len(rows))
+	}
+
+	// Same id in and out must not delete the row it was asked to keep.
+	if err := groups.MigrateGroupID(newID, newID); err != nil {
+		t.Fatalf("self-migration: %v", err)
+	}
+	if exists, _ := groups.Exists(newID); !exists {
+		t.Error("migrating a group onto itself deleted it")
+	}
+}
+
+// TestGetUnsyncedGroupIDs backs the backfill: it must return exactly the members the cleanup
+// sweep is deferring, and stop returning them once they are stamped.
+func TestGetUnsyncedGroupIDs(t *testing.T) {
+	clearAll(t)
+	users := NewUserRepository()
+
+	users.Create(newUserUnique(70))
+	users.Create(newUserUnique(71))
+
+	ids, err := users.GetUnsyncedGroupIDs()
+	if err != nil {
+		t.Fatalf("GetUnsyncedGroupIDs: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("got %d unsynced members, want 2 (a fresh user is never stamped)", len(ids))
+	}
+
+	if err := users.MarkGroupsSynced(70, time.Now()); err != nil {
+		t.Fatalf("MarkGroupsSynced: %v", err)
+	}
+
+	ids, _ = users.GetUnsyncedGroupIDs()
+	if len(ids) != 1 || ids[0] != 71 {
+		t.Fatalf("after stamping user 70, got %v, want [71]", ids)
 	}
 }
 

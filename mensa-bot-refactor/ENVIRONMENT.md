@@ -131,3 +131,30 @@ sweep only logs what it would do — read those logs before setting it to `false
 | `CLEANUP_API_CONCURRENCY` | `4` | Parallel Mensa API validity checks during a sweep. |
 | `CLEANUP_TELEGRAM_DELAY_MS` | `100` | Delay between Telegram actions to stay within rate limits. |
 | `CLEANUP_SKIP_BOT_ADMINS` | `true` | Never sweep users flagged `is_bot_admin`. |
+
+## Group-sync backfill
+
+`SyncMemberGroups` runs once per member, at registration, and stamps
+`users.groups_synced_at` only if **every** row in `groups` could be probed. A single
+unprobeable row — most often a chat id left stale after Telegram upgraded a basic group
+to a supergroup — therefore fails the sweep for every member, and nothing ever retries
+them. Unstamped members are deferred by the cleanup sweep indefinitely.
+
+The bot now records upgrades as they happen (`ChatMigrationHandler`) and self-heals on the
+`MigrateError` it gets back, so this should not recur. `GROUP_SYNC_BACKFILL` is for draining
+the backlog left behind by an occurrence that already happened.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GROUP_SYNC_BACKFILL` | `false` | When `true`, re-probe every member with `groups_synced_at IS NULL` once at startup and stamp the ones that complete. |
+
+Set it for a single boot, confirm `group sync backfill: finished` reports `failed: 0`, then
+unset it. Members that still fail are left unstamped, which is the safe direction. If the
+backfill keeps finding work on every boot, a row in `groups` is still unprobeable — fix that
+rather than leaving the backfill on.
+
+Find the affected members with:
+
+```sql
+SELECT telegram_id, member_number FROM users WHERE groups_synced_at IS NULL;
+```

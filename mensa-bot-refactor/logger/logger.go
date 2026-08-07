@@ -90,6 +90,23 @@ func getLogger() *Logger {
 	return defaultLogger
 }
 
+// callerSkip is the stack depth, counted from log's own frame, of the code that actually
+// called the logger:
+//
+//	0  (*Logger).log            — where runtime.Caller is invoked
+//	1  Info / Warn / Infof / …  — the exported entry point
+//	2  the real call site       ← what we report
+//
+// Every exported entry point sits exactly one frame above log. That invariant is the whole
+// reason the formatted variants (Infof and friends) call log directly instead of delegating
+// to Info: delegating adds a frame and mis-attributes the line.
+//
+// This was 3, which named the caller OF the function containing the log statement. Where
+// that frame left application code — a goroutine's top-level function, main, a library's
+// handler dispatcher — it escaped into the runtime and reported nonsense sites like
+// asm_amd64.s:1771 (runtime.goexit), proc.go:290 (runtime.main) and net/http/server.go.
+const callerSkip = 2
+
 // log writes a log entry if the level is enabled
 func (l *Logger) log(level Level, msg string, fields map[string]interface{}) {
 	l.mu.Lock()
@@ -100,7 +117,7 @@ func (l *Logger) log(level Level, msg string, fields map[string]interface{}) {
 	}
 
 	// Get caller information
-	_, file, line, ok := runtime.Caller(3)
+	_, file, line, ok := runtime.Caller(callerSkip)
 	caller := ""
 	if ok {
 		// Get just the filename, not the full path
@@ -164,24 +181,28 @@ func Error(msg string, fields ...map[string]interface{}) {
 	getLogger().log(LevelError, msg, f)
 }
 
+// The formatted variants call log DIRECTLY rather than delegating to Debug/Info/Warn/Error.
+// Delegating would put them two frames above log instead of one and break callerSkip's
+// invariant, reporting this file as the caller of every formatted log line.
+
 // Debugf logs a formatted debug message
 func Debugf(format string, args ...interface{}) {
-	Debug(fmt.Sprintf(format, args...))
+	getLogger().log(LevelDebug, fmt.Sprintf(format, args...), nil)
 }
 
 // Infof logs a formatted info message
 func Infof(format string, args ...interface{}) {
-	Info(fmt.Sprintf(format, args...))
+	getLogger().log(LevelInfo, fmt.Sprintf(format, args...), nil)
 }
 
 // Warnf logs a formatted warning message
 func Warnf(format string, args ...interface{}) {
-	Warn(fmt.Sprintf(format, args...))
+	getLogger().log(LevelWarn, fmt.Sprintf(format, args...), nil)
 }
 
 // Errorf logs a formatted error message
 func Errorf(format string, args ...interface{}) {
-	Error(fmt.Sprintf(format, args...))
+	getLogger().log(LevelError, fmt.Sprintf(format, args...), nil)
 }
 
 // WithFields creates a log entry with additional fields
@@ -220,7 +241,9 @@ func Fatal(msg string, fields ...map[string]interface{}) {
 	os.Exit(1)
 }
 
-// Fatalf logs a formatted error message and exits
+// Fatalf logs a formatted error message and exits. Calls log directly, not Fatal, for the
+// same frame-depth reason as Infof and friends.
 func Fatalf(format string, args ...interface{}) {
-	Fatal(fmt.Sprintf(format, args...))
+	getLogger().log(LevelError, fmt.Sprintf(format, args...), nil)
+	os.Exit(1)
 }

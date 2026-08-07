@@ -1,6 +1,10 @@
 package mtproto
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 // TestToChannelID pins the Bot API -> MTProto id conversion.
 //
@@ -63,6 +67,34 @@ func TestToChannelID(t *testing.T) {
 				t.Errorf("toChannelID(%d) = %d, want %d", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestLegacyBasicGroupIsMatchable is the point of ErrLegacyBasicGroup existing.
+//
+// This used to be a bare fmt.Errorf string, so callers had nothing to match on and it fell
+// into group_handler's `default:` branch — logged at ERROR as an unknown failure, on every
+// promotion event, forever. It is neither unknown nor retryable: a basic group has no
+// member-list API and only a human can upgrade the chat. Callers must be able to say so.
+func TestLegacyBasicGroupIsMatchable(t *testing.T) {
+	_, err := toChannelID(-123456789)
+	if err == nil {
+		t.Fatal("expected an error for a legacy basic group")
+	}
+
+	if !errors.Is(err, ErrLegacyBasicGroup) {
+		t.Errorf("errors.Is(err, ErrLegacyBasicGroup) = false for %v — callers cannot classify it", err)
+	}
+
+	// The chat id must survive wrapping: it is the only thing that tells an operator WHICH
+	// group to upgrade.
+	if !strings.Contains(err.Error(), "-123456789") {
+		t.Errorf("error %q does not name the offending chat id", err)
+	}
+
+	// A supergroup id must NOT match the sentinel.
+	if _, err := toChannelID(-1004435267124); err != nil {
+		t.Fatalf("a supergroup id should convert cleanly, got %v", err)
 	}
 }
 
