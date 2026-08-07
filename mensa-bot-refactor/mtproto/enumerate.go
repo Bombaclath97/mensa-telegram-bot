@@ -345,6 +345,16 @@ func interpret(err error) error {
 // promotion event — never as a permanent failure.
 var ErrAdminRequired = errors.New("the bot is not an administrator of this group yet")
 
+// ErrLegacyBasicGroup means the chat is a pre-supergroup "basic" group, which has no
+// channels.getParticipants at all.
+//
+// This is PERMANENT and not the bot's to fix: only a human can upgrade the chat (and
+// Telegram does it automatically on various triggers). Callers must treat it as an expected
+// dead end and say so at WARN — never as an unknown failure at ERROR, which is what it used
+// to be when this was an unwrapped fmt.Errorf string that errors.Is could not match.
+var ErrLegacyBasicGroup = errors.New("this is a legacy basic group, not a supergroup: " +
+	"channels.getParticipants does not apply")
+
 // toChannelID converts a Bot API chat id to a bare MTProto channel id. See botAPIChannelBase.
 func toChannelID(botAPIID int64) (int64, error) {
 	switch {
@@ -355,8 +365,7 @@ func toChannelID(botAPIID int64) (int64, error) {
 		// A legacy BASIC group. These do not go through channels.getParticipants at all —
 		// their member list arrives via messages.getFullChat. Fail loudly rather than emit a
 		// nonsense id that would surface as a misleading CHANNEL_INVALID.
-		return 0, fmt.Errorf("chat %d is a legacy basic group, not a supergroup: "+
-			"channels.getParticipants does not apply", botAPIID)
+		return 0, fmt.Errorf("chat %d: %w", botAPIID, ErrLegacyBasicGroup)
 	default:
 		id := -botAPIID - botAPIChannelBase
 		if id <= 0 {
