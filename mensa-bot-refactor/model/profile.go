@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/Bombaclath97/mensa-telegram-bot/logger"
 )
 
 // Field represents the current active field being filled in the profile draft.
@@ -139,6 +141,12 @@ func (s *ProfileDraftStore) janitor() {
 
 // SweepExpired removes every expired draft. Called periodically by the janitor;
 // exported so it can be driven deterministically in tests.
+//
+// Abandoned registrations are logged individually and on purpose. They used to vanish in
+// silence, which made a very common support question unanswerable: a user who starts /start,
+// gets the approval push and never finishes leaves NO trace at all, so "the member says the
+// app never asked them" and "the member ignored the prompt" produced identical logs. The
+// step the draft died at is the thing that distinguishes them.
 func (s *ProfileDraftStore) SweepExpired() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -146,11 +154,33 @@ func (s *ProfileDraftStore) SweepExpired() int {
 	removed := 0
 	for userID, draft := range s.drafts {
 		if draft.IsExpired() {
+			logger.Info("registration abandoned: draft expired before completion",
+				map[string]interface{}{
+					"user_id":    userID,
+					"step":       draft.abandonedStep(),
+					"expired_at": draft.ExpiresAt.UTC().Format(time.RFC3339),
+				})
 			delete(s.drafts, userID)
 			removed++
 		}
 	}
 	return removed
+}
+
+// abandonedStep names the point a draft died at, for the expiry log.
+//
+// Locked is checked FIRST because it is the interesting case: the draft was waiting on the
+// Mensa app's callme callback, so an expiry here means the push was never answered — either
+// the user ignored it or it never reached them. The ActiveField cases are ordinary
+// conversation drop-off.
+func (d *ProfileDraft) abandonedStep() string {
+	if d.Locked {
+		return "awaiting_mensa_app_approval"
+	}
+	if d.ActiveField != FieldNone {
+		return "awaiting_" + string(d.ActiveField)
+	}
+	return "idle"
 }
 
 // Get retrieves a profile draft for a user. Returns nil if there is none or it expired.

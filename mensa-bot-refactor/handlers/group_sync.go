@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
 	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
+	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -61,17 +63,60 @@ func SyncMemberGroups(ctx context.Context, userID int64) error {
 
 		member, err := tb.GetChatMember(ctx, group.GroupID, userID)
 		if err != nil {
-			// Could be anything: the bot was removed from the group, the chat is gone, a
-			// transient API failure. We do not know whether the member is in there, so the
-			// sweep is not complete and must not be stamped.
-			complete = false
-			logger.Warn("group sync: could not probe a group, the sweep will not be stamped",
-				map[string]interface{}{
-					"user_id":  userID,
-					"group_id": group.GroupID,
-					"error":    err.Error(),
-				})
-			continue
+			// A chat upgraded to a supergroup is RESOLVED, not unknown: Telegram hands us the
+			// new id in a typed field, so we re-point the row and probe again below. Without
+			// this, the dead row is unprobeable forever and — because one bad row fails the
+			// whole sweep — no user ever gets groups_synced_at stamped again.
+			var migrate *bot.MigrateError
+			if errors.As(err, &migrate) && migrate.MigrateToChatID != 0 {
+				newID := int64(migrate.MigrateToChatID)
+				logger.Info("group sync: chat was upgraded to a supergroup, migrating the group row",
+					map[string]interface{}{
+						"user_id": userID,
+						"old_id":  group.GroupID,
+						"new_id":  newID,
+					})
+
+				if err := groupRepo.MigrateGroupID(group.GroupID, newID); err != nil {
+					complete = false
+					logger.Error("group sync: could not migrate the upgraded group",
+						map[string]interface{}{
+							"user_id": userID,
+							"old_id":  group.GroupID,
+							"new_id":  newID,
+							"error":   err.Error(),
+						})
+					continue
+				}
+
+				// Re-probe under the new id so THIS sweep still completes honestly. The
+				// migrated row is already in `groups`; if it was also in this loop's snapshot
+				// it gets probed twice, which is idempotent and harmless.
+				member, err = tb.GetChatMember(ctx, newID, userID)
+				if err != nil {
+					complete = false
+					logger.Warn("group sync: could not probe the upgraded group, the sweep will not be stamped",
+						map[string]interface{}{
+							"user_id":  userID,
+							"group_id": newID,
+							"error":    err.Error(),
+						})
+					continue
+				}
+				group.GroupID = newID
+			} else {
+				// Could be anything: the bot was removed from the group, the chat is gone, a
+				// transient API failure. We do not know whether the member is in there, so the
+				// sweep is not complete and must not be stamped.
+				complete = false
+				logger.Warn("group sync: could not probe a group, the sweep will not be stamped",
+					map[string]interface{}{
+						"user_id":  userID,
+						"group_id": group.GroupID,
+						"error":    err.Error(),
+					})
+				continue
+			}
 		}
 
 		if memberIsInGroup(member) {
@@ -115,6 +160,66 @@ func SyncMemberGroups(ctx context.Context, userID int64) error {
 		"in_groups": inGroups,
 	})
 	return nil
+}
+
+// BackfillUnsyncedMembers re-probes every member whose groups were never successfully synced
+// and stamps the ones that now complete.
+//
+// # Why this is needed at all
+//
+// SyncMemberGroups runs exactly once per member, at registration. If it fails there, nothing
+// ever retries it — and it fails for EVERY member whenever a single row in `groups` cannot be
+// probed, which is what a chat id left stale by a supergroup upgrade does. The result is a
+// population of members stuck at groups_synced_at = NULL that the cleanup sweep defers
+// forever, long after the underlying group row is repaired.
+//
+// This is opt-in (GROUP_SYNC_BACKFILL) and one-shot rather than periodic: it exists to drain
+// a backlog after a repair, not to paper over a recurring failure. If it keeps finding work
+// on every boot, something in `groups` is still unprobeable and that is the thing to fix.
+//
+// Members that still cannot be synced are left NULL, which is the safe direction: unstamped
+// means "deferred", never "deletable".
+func BackfillUnsyncedMembers(ctx context.Context) {
+	userRepo := database.NewUserRepository()
+
+	ids, err := userRepo.GetUnsyncedGroupIDs()
+	if err != nil {
+		logger.Error("group sync backfill: could not list unsynced members",
+			map[string]interface{}{"error": err.Error()})
+		return
+	}
+	if len(ids) == 0 {
+		logger.Info("group sync backfill: nothing to do, every member is stamped", nil)
+		return
+	}
+
+	logger.Info("group sync backfill: starting", map[string]interface{}{"members": len(ids)})
+
+	var synced, failed int
+	for _, userID := range ids {
+		if ctx.Err() != nil {
+			logger.Warn("group sync backfill: cancelled before finishing", map[string]interface{}{
+				"synced":    synced,
+				"failed":    failed,
+				"remaining": len(ids) - synced - failed,
+			})
+			return
+		}
+
+		if err := SyncMemberGroups(ctx, userID); err != nil {
+			failed++
+			logger.Warn("group sync backfill: member still could not be synced",
+				map[string]interface{}{"user_id": userID, "error": err.Error()})
+			continue
+		}
+		synced++
+	}
+
+	logger.Info("group sync backfill: finished", map[string]interface{}{
+		"members": len(ids),
+		"synced":  synced,
+		"failed":  failed,
+	})
 }
 
 // memberIsInGroup reports whether a ChatMember response means the user is actually in the

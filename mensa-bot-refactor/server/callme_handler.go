@@ -130,6 +130,13 @@ func CallmeHandler(w http.ResponseWriter, r *http.Request) {
 	// the Mensa API for the member's name and DMs them. If the caller hung up, cancelling
 	// that half-way would leave a member who has already approved in the app with no
 	// profile. It gets its own budget instead.
+	// Logged BEFORE the completion runs, not after. ProfileCompleteAfterApproval writes the
+	// user row, DMs the member and syncs their groups, all of which log in their own right —
+	// so emitting the approval afterwards printed the effects above their cause and made the
+	// registration timeline read backwards ("User registered" preceding "user approved").
+	logger.Info("Callme callback: user approved the verification, completing registration",
+		map[string]interface{}{"user_id": userID})
+
 	ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
 	defer cancel()
 
@@ -141,10 +148,6 @@ func CallmeHandler(w http.ResponseWriter, r *http.Request) {
 		callmeReject(w)
 		return
 	}
-
-	logger.Info("Callme callback: user approved the verification", map[string]interface{}{
-		"user_id": userID,
-	})
 
 	// No DM here: ProfileCompleteAfterApproval has already written the row and sent the
 	// member their confirmation plus their profile card. The old "approved — now send me
