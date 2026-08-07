@@ -117,6 +117,14 @@ func main() {
 	// exposed over HTTP. Start blocks until ctx is cancelled, hence the goroutine.
 	go cleanup.Start(ctx)
 
+	// One-shot repair for members left at groups_synced_at = NULL by a group row that could
+	// not be probed (see handlers.BackfillUnsyncedMembers). Opt-in, because it is a backlog
+	// drain after a fix and not a routine startup task — and because it makes one Telegram
+	// call per member per known group.
+	if os.Getenv("GROUP_SYNC_BACKFILL") == "true" {
+		go handlers.BackfillUnsyncedMembers(ctx)
+	}
+
 	logger.Info("Bot started successfully", map[string]interface{}{"http_addr": srv.Addr()})
 
 	// Blocks until ctx is cancelled by SIGINT/SIGTERM; the server and cleanup
@@ -163,6 +171,10 @@ func registerHandlers(b *bot.Bot) {
 	// dispatches to both internally.
 	b.RegisterHandlerMatchFunc(handlers.MatchChatJoinRequest, handlers.ChatJoinRequestHandler)
 	b.RegisterHandlerMatchFunc(handlers.MatchMyChatMember, handlers.MyChatMemberHandler)
+	// A basic group upgrading to a supergroup CHANGES ITS CHAT ID. Recording that promptly
+	// keeps the groups table probeable; a stale row fails every future group sync for every
+	// member, not just the one who triggered it.
+	b.RegisterHandlerMatchFunc(handlers.MatchChatMigration, handlers.ChatMigrationHandler)
 
 	// Commands
 	b.RegisterHandler(bot.HandlerTypeMessageText, "start", bot.MatchTypeCommand, handlers.StartCommandHandler)

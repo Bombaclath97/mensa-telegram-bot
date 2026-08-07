@@ -31,6 +31,91 @@ func MatchMyChatMember(update *models.Update) bool {
 	return chatType == models.ChatTypeGroup || chatType == models.ChatTypeSupergroup
 }
 
+// MatchChatMigration is the match predicate for ChatMigrationHandler.
+//
+// Telegram announces a basic-group -> supergroup upgrade with a service message on BOTH
+// sides: migrate_to_chat_id in the dying basic group, migrate_from_chat_id in the new
+// supergroup. Either one is enough, and matching both makes the handler robust to whichever
+// update the bot actually receives (it is often only in one of the two chats by then).
+//
+// REGISTRATION ORDER: this must be registered BEFORE the command handlers. go-telegram
+// dispatches to the first matching handler only, and a service message carries no text, so
+// nothing else would claim it — but keeping it with the other update-type handlers makes
+// that independent of future command registrations.
+func MatchChatMigration(update *models.Update) bool {
+	if update == nil || update.Message == nil {
+		return false
+	}
+	return update.Message.MigrateToChatID != 0 || update.Message.MigrateFromChatID != 0
+}
+
+// ChatMigrationHandler records a basic-group -> supergroup upgrade the moment it happens,
+// instead of letting it be discovered later as a permanently failing probe.
+//
+// # Why this matters more than it looks
+//
+// The chat id changes on upgrade. Until the groups row is re-pointed, SyncMemberGroups keeps
+// probing the dead id and fails; because a single unprobeable row fails the WHOLE sweep,
+// users.groups_synced_at is then left NULL for every member on every registration, and the
+// cleanup sweep defers all of them indefinitely. SyncMemberGroups also self-heals from the
+// MigrateError it gets back (see group_sync.go), but that only fires when someone happens to
+// register; this catches it immediately.
+func ChatMigrationHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if !MatchChatMigration(update) {
+		return
+	}
+
+	msg := update.Message
+
+	// Normalise both directions into (old, new).
+	oldID, newID := msg.Chat.ID, msg.MigrateToChatID
+	if msg.MigrateFromChatID != 0 {
+		oldID, newID = msg.MigrateFromChatID, msg.Chat.ID
+	}
+	if oldID == 0 || newID == 0 || oldID == newID {
+		return
+	}
+
+	groupRepo := database.NewGroupRepository()
+
+	// Only act on groups the bot actually tracks: an upgrade of some unrelated chat we were
+	// merely present in must not create rows.
+	known, err := groupRepo.Exists(oldID)
+	if err != nil {
+		logger.Error("Chat migration: could not check the old group", map[string]interface{}{
+			"old_id": oldID,
+			"new_id": newID,
+			"error":  err.Error(),
+		})
+		return
+	}
+	if !known {
+		logger.Debug("Chat migration ignored: the old chat was not a tracked group",
+			map[string]interface{}{"old_id": oldID, "new_id": newID})
+		return
+	}
+
+	if err := groupRepo.MigrateGroupID(oldID, newID); err != nil {
+		logger.Error("Chat migration FAILED: the stale group row will keep failing every group "+
+			"sync, leaving groups_synced_at NULL for every member until it is fixed",
+			map[string]interface{}{
+				"old_id": oldID,
+				"new_id": newID,
+				"error":  err.Error(),
+			})
+		return
+	}
+
+	logger.Info("Chat migrated to a supergroup, group row re-pointed", map[string]interface{}{
+		"old_id": oldID,
+		"new_id": newID,
+	})
+
+	// The upgraded chat is a real supergroup, so the member list is now readable — which it
+	// was not while it was a basic group (see ErrLegacyBasicGroup).
+	groupEnumerateExistingMembers(ctx, newID)
+}
+
 // MyChatMemberHandler reacts to changes of the BOT's own membership in a group.
 //
 // MyChatMember updates always concern the bot itself, so no bot-ID check is needed.
@@ -149,6 +234,14 @@ func groupEnumerateExistingMembers(ctx context.Context, groupID int64) {
 			// partial list would later classify verified members as unprofiled.
 			logger.Error("Group enumeration REFUSED: the participant list is hidden, so any read "+
 				"would be incomplete. Ask the group admins to unhide members, then re-promote the bot",
+				map[string]interface{}{"group_id": groupID})
+		case errors.Is(err, mtproto.ErrLegacyBasicGroup):
+			// Expected and permanent, so WARN rather than ERROR: no retry will ever help and
+			// there is nothing the bot can do. The fix is human — upgrade the chat — and
+			// Telegram re-runs this handler against the new supergroup id when that happens.
+			logger.Warn("Group enumeration skipped: this is a legacy basic group, which has no "+
+				"member-list API. Ask the group admins to upgrade it to a supergroup, then "+
+				"re-promote the bot; members already inside stay invisible until then",
 				map[string]interface{}{"group_id": groupID})
 		default:
 			logger.Error("Group enumeration failed", map[string]interface{}{

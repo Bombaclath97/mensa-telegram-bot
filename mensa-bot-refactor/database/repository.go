@@ -168,6 +168,22 @@ func (r *UserRepository) MarkGroupsSynced(telegramID int64, at time.Time) error 
 		Update("groups_synced_at", at).Error
 }
 
+// GetUnsyncedGroupIDs returns the Telegram IDs of members whose groups have never been
+// successfully probed (groups_synced_at IS NULL).
+//
+// These are the members the cleanup sweep must defer, so a permanently unstamped population
+// is a stalled sweep. It normally shrinks to nothing on its own — everyone is stamped at
+// registration — but a single unprobeable row in `groups` fails the sweep for EVERYONE, and
+// SyncMemberGroups never runs again for an already-registered member. This exists so that
+// backlog can be re-probed once the underlying cause is fixed. See GROUP_SYNC_BACKFILL.
+func (r *UserRepository) GetUnsyncedGroupIDs() ([]int64, error) {
+	var ids []int64
+	result := Get().Model(&User{}).
+		Where("groups_synced_at IS NULL").
+		Pluck("telegram_id", &ids)
+	return ids, result.Error
+}
+
 // GetLanguage retrieves the effective language for a Telegram ID: the registered user's
 // language, else a pending /lang preference, else DefaultLanguage. Never fails loudly —
 // a DB error degrades to the default language and is logged.
@@ -242,6 +258,65 @@ func (r *GroupRepository) Register(groupID int64) error {
 // Delete deletes a group by its ID. groups_associations rows cascade.
 func (r *GroupRepository) Delete(groupID int64) error {
 	return Get().Delete(&Group{}, "group_id = ?", groupID).Error
+}
+
+// MigrateGroupID re-points a group and all of its associations at a new chat id, which is
+// what Telegram hands us when a legacy basic group is upgraded to a supergroup.
+//
+// # Why this is a merge and not an UPDATE
+//
+// The FK carries ON UPDATE CASCADE (see Group), so `UPDATE groups SET group_id = ?` would
+// carry the associations along by itself — but only when the destination row does not exist
+// yet. In practice it usually does: Telegram sends my_chat_member for the NEW supergroup, so
+// group_handler registers it long before anything notices the old row is dead. A bare update
+// would then collide on the primary key. Hence: create-if-absent, move what can move, and
+// drop the rest.
+//
+// The admin flag is OR'd rather than overwritten so a merge can never silently demote
+// someone who was an admin under the old id.
+//
+// Leaving the old row in place is not an option: SyncMemberGroups probes EVERY row in
+// groups, and one unprobeable row makes every future sync incomplete for every user, which
+// leaves users.groups_synced_at NULL forever and stalls the cleanup sweep.
+func (r *GroupRepository) MigrateGroupID(oldID, newID int64) error {
+	if oldID == newID {
+		return nil
+	}
+
+	return Get().Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&Group{GroupID: newID}).Error; err != nil {
+			return err
+		}
+
+		// Preserve admin status for members who already exist under the new id.
+		if err := tx.Exec(`
+			UPDATE groups_associations AS new
+			SET is_group_admin = true
+			FROM groups_associations AS old
+			WHERE new.group_id = ? AND old.group_id = ?
+			  AND new.user_id = old.user_id AND old.is_group_admin`,
+			newID, oldID).Error; err != nil {
+			return err
+		}
+
+		// Move everyone who is not already there.
+		if err := tx.Exec(`
+			UPDATE groups_associations
+			SET group_id = ?
+			WHERE group_id = ?
+			  AND user_id NOT IN (SELECT user_id FROM groups_associations WHERE group_id = ?)`,
+			newID, oldID, newID).Error; err != nil {
+			return err
+		}
+
+		// Whatever is left are duplicates already represented under the new id.
+		if err := tx.Exec(`DELETE FROM groups_associations WHERE group_id = ?`, oldID).Error; err != nil {
+			return err
+		}
+
+		return tx.Delete(&Group{}, "group_id = ?", oldID).Error
+	})
 }
 
 // Exists checks if a group is registered.

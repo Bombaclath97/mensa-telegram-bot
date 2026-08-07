@@ -178,7 +178,13 @@ func Start(ctx context.Context) {
 		"first_sweep_at": time.Now().Add(interval).Format(time.RFC3339),
 	})
 	if cfg.dryRun {
-		logger.Warn("cleanup: DRY RUN is active — the sweep will report what it would do and delete nobody. Set CLEANUP_DRY_RUN=false to arm it.", nil)
+		// INFO, not WARN: dry run is the DEFAULT (see defaultDryRun) and therefore the normal
+		// state of a fresh deployment, so this fires on every boot. A WARN that is always
+		// present on a correctly configured system is exactly what teaches operators to skim
+		// past WARNs — the genuinely abnormal case is the armed one, flagged just below.
+		logger.Info("cleanup: DRY RUN is active — the sweep will report what it would do and delete nobody. Set CLEANUP_DRY_RUN=false to arm it.", nil)
+	} else {
+		logger.Warn("cleanup: ARMED — the sweep will DM and delete expired members for real.", nil)
 	}
 
 	if runOnStart {
