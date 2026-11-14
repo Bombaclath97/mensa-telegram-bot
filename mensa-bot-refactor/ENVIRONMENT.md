@@ -161,7 +161,7 @@ the backlog left behind by an occurrence that already happened.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `GROUP_SYNC_BACKFILL` | `false` | When `true`, re-probe every member with `groups_synced_at IS NULL` once at startup and stamp the ones that complete. |
+| `GROUP_SYNC_BACKFILL` | `false` | When `true`, re-probe every member with `groups_synced_at IS NULL` once at startup and stamp the ones that complete. Runs after the startup group status refresh, so groups the bot has left are already skipped. |
 
 Set it for a single boot, confirm `group sync backfill: finished` reports `failed: 0`, then
 unset it. Members that still fail are left unstamped, which is the safe direction. If the

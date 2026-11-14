@@ -69,12 +69,33 @@ func (User) TableName() string {
 type Group struct {
 	GroupID int64 `gorm:"primaryKey;autoIncrement:false" json:"group_id"`
 
+	// Status is the bot's own standing in the group, kept current by every my_chat_member
+	// update: GroupStatusAdmin, GroupStatusMember or GroupStatusLeft. Empty means unknown
+	// (rows from before this column existed) and is treated as active.
+	//
+	// A group the bot has left is KEPT, not deleted: deleting it would cascade away every
+	// member's association with it, which is the wrong answer when an admin removed the bot
+	// by mistake and adds it back. Everything that probes groups skips the left ones instead.
+	Status    string    `gorm:"not null;default:''" json:"status"`
+	Title     string    `json:"title"`
+	UpdatedAt time.Time `json:"updated_at"`
+
 	GroupAssociations []GroupAssociation `gorm:"foreignKey:GroupID;references:GroupID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE" json:"-"`
 }
 
 func (Group) TableName() string {
 	return "groups"
 }
+
+// Bot status values for Group.Status.
+const (
+	GroupStatusAdmin  = "admin"
+	GroupStatusMember = "member"
+	GroupStatusLeft   = "left"
+)
+
+// Active reports whether the bot is (as far as we know) still in the group.
+func (g Group) Active() bool { return g.Status != GroupStatusLeft }
 
 // GroupAssociation represents the many-to-many relationship between users and groups.
 // Both foreign keys live on THIS table and cascade on delete:

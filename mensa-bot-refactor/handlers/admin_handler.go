@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/go-telegram/bot"
@@ -181,4 +182,70 @@ func truncate(s string) string {
 		cut = telegramMaxText - len(note)
 	}
 	return s[:cut] + note
+}
+
+// GroupsCommandHandler handles /groups: every group the bot knows, its standing in each, and
+// how many registered members are recorded there.
+func GroupsCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	chatID, ok := adminFromUpdate(update, "groups")
+	if !ok {
+		return
+	}
+	repo := database.NewGroupRepository()
+	groups, err := repo.GetAll()
+	if err == nil {
+		var counts map[int64]int
+		if counts, err = repo.MemberCounts(); err == nil {
+			tb.Send(ctx, chatID, FormatGroups(groups, counts))
+			return
+		}
+	}
+	logger.Error("Failed to list groups", map[string]interface{}{"error": err.Error()})
+	tb.Send(ctx, chatID, fmt.Sprintf("🚨 Could not list groups: <code>%s</code>", tolgee.EscapeHTML(err.Error())))
+}
+
+// FormatGroups renders the group list (HTML). Admin groups first, then member, unknown and
+// left, so the ones needing attention are easy to spot.
+func FormatGroups(groups []database.Group, counts map[int64]int) string {
+	if len(groups) == 0 {
+		return "No groups yet: add the bot to a group and make it an admin."
+	}
+
+	rank := map[string]int{database.GroupStatusAdmin: 0, database.GroupStatusMember: 1, "": 2, database.GroupStatusLeft: 3}
+	sorted := append([]database.Group(nil), groups...)
+	sort.SliceStable(sorted, func(i, j int) bool { return rank[sorted[i].Status] < rank[sorted[j].Status] })
+
+	tally := map[string]int{}
+	for _, g := range groups {
+		tally[g.Status]++
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "👥 <b>%d group(s)</b>: %d admin · %d not admin · %d unknown · %d left\n",
+		len(groups), tally[database.GroupStatusAdmin], tally[database.GroupStatusMember], tally[""], tally[database.GroupStatusLeft])
+	if tally[database.GroupStatusMember] > 0 {
+		b.WriteString("⚠️ Where the bot is not admin it cannot approve join requests or remove anyone.\n")
+	}
+
+	for i, g := range sorted {
+		if i == maxListed {
+			fmt.Fprintf(&b, "\n… and %d more", len(sorted)-maxListed)
+			break
+		}
+		icon, status := "✅", "admin"
+		switch g.Status {
+		case database.GroupStatusMember:
+			icon, status = "⚠️", "not admin"
+		case database.GroupStatusLeft:
+			icon, status = "🚪", "left"
+		case "":
+			icon, status = "❔", "status unknown"
+		}
+		title := g.Title
+		if title == "" {
+			title = "(no title recorded)"
+		}
+		fmt.Fprintf(&b, "\n%s <b>%s</b> · %s · %d member(s)\n   <code>%d</code>", icon, tolgee.EscapeHTML(title), status, counts[g.GroupID], g.GroupID)
+	}
+	return truncate(b.String())
 }

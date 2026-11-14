@@ -171,7 +171,7 @@ func repaintCard(ctx context.Context, chatID int64, messageID int, user *databas
 // cardGroups loads the member's groups and resolves each group's title.
 func cardGroups(ctx context.Context, userID int64) ([]database.GroupAssociation, map[int64]string) {
 	groupAssocRepo := database.NewGroupAssociationRepository()
-	groups, err := groupAssocRepo.GetUserGroups(userID)
+	groups, err := groupAssocRepo.GetUserActiveGroups(userID)
 	if err != nil {
 		logger.Error("Failed to load groups for the profile card", map[string]interface{}{
 			"error":   err.Error(),
