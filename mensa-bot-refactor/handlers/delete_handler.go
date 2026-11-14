@@ -168,6 +168,9 @@ func DeleteMemberEverywhere(ctx context.Context, userID int64, lang string) (Del
 		if res.Err != nil {
 			fields["error"] = res.Err.Error()
 		}
+		if res.Outcome == membership.Gone {
+			membership.RecordBotGone(ctx, assoc.GroupID, res.Err)
+		}
 		if res.Outcome == membership.Failed {
 			result.PendingGroups = append(result.PendingGroups, assoc.GroupID)
 			logger.Warn("Could not remove member from group, queueing a retry", fields)

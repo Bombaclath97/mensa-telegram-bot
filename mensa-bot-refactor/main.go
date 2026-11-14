@@ -126,9 +126,20 @@ func main() {
 	// not be probed (see handlers.BackfillUnsyncedMembers). Opt-in, because it is a backlog
 	// drain after a fix and not a routine startup task — and because it makes one Telegram
 	// call per member per known group.
-	if os.Getenv("GROUP_SYNC_BACKFILL") == "true" {
-		go handlers.BackfillUnsyncedMembers(ctx)
-	}
+	//
+	// It runs AFTER the group status refresh below, never alongside it: the refresh is what
+	// marks groups the bot has left, and a backfill that ran first would probe those groups,
+	// fail, and leave the very members it exists to repair unstamped again.
+	backfill := os.Getenv("GROUP_SYNC_BACKFILL") == "true"
+
+	// Read the bot's own status in every known group once at boot. Fills in rows from before
+	// the status column existed, and catches removals missed while the bot was down.
+	go func() {
+		membership.RefreshGroups(ctx)
+		if backfill {
+			handlers.BackfillUnsyncedMembers(ctx)
+		}
+	}()
 
 	logger.Info("Bot started successfully", map[string]interface{}{"http_addr": srv.Addr()})
 
@@ -193,6 +204,7 @@ func registerHandlers(b *bot.Bot) {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "manual_add", bot.MatchTypeCommand, handlers.ManualAddCommandHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "sweep_preview", bot.MatchTypeCommand, handlers.SweepPreviewCommandHandler)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "pending", bot.MatchTypeCommand, handlers.PendingCommandHandler)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "groups", bot.MatchTypeCommand, handlers.GroupsCommandHandler)
 
 	// Callbacks
 	// NOTE: "pcard:" must be registered BEFORE "profile:" only if the prefixes overlapped —

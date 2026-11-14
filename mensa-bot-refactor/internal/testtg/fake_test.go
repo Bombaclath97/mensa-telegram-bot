@@ -66,6 +66,14 @@ func TestFakeSpeaksTheBotAPI(t *testing.T) {
 		t.Fatal("want the configured ban failure")
 	}
 
+	s.SetTitle(chat, "Mensa Lombardia")
+	if c, err := tb.GetChat(ctx, chat); err != nil || c.Title != "Mensa Lombardia" {
+		t.Fatalf("getChat: %+v, %v", c, err)
+	}
+	if admins, err := tb.GetChatAdministrators(ctx, chat); err != nil || len(admins) != 0 {
+		t.Fatalf("getChatAdministrators: %+v, %v", admins, err)
+	}
+
 	s.Reset()
 	if len(s.Calls("")) != 0 {
 		t.Fatal("Reset should forget calls")

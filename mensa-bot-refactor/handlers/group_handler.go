@@ -3,9 +3,13 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
+	"github.com/Bombaclath97/mensa-telegram-bot/alert"
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Bombaclath97/mensa-telegram-bot/membership"
 	"github.com/Bombaclath97/mensa-telegram-bot/mtproto"
 	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
 	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
@@ -141,19 +145,41 @@ func MyChatMemberHandler(ctx context.Context, b *bot.Bot, update *models.Update)
 
 	joined := groupIsInsideStatus(newStatus) && !groupIsInsideStatus(oldStatus)
 	promoted := newStatus == models.ChatMemberTypeAdministrator && oldStatus != models.ChatMemberTypeAdministrator
+	removed := !groupIsInsideStatus(newStatus) && groupIsInsideStatus(oldStatus)
+	demoted := groupIsInsideStatus(newStatus) && newStatus != models.ChatMemberTypeAdministrator &&
+		oldStatus == models.ChatMemberTypeAdministrator
 
-	if !joined && !promoted {
-		// Left / kicked / demoted / restriction tweaks: nothing to persist here.
+	// Record the bot's standing on EVERY change, leaving included. Before this, leaving was
+	// never recorded: the row stayed "active", every member's group sync kept probing a chat
+	// the bot could no longer see, failed, and left groups_synced_at NULL for every new
+	// member, which makes the cleanup sweep defer all of them forever.
+	groupRepo := database.NewGroupRepository()
+	if err := groupRepo.SetStatus(groupID, membership.BotStatus(newStatus), mcm.Chat.Title); err != nil {
+		logger.Error("Failed to record the bot's status in the group", map[string]interface{}{
+			"group_id": groupID,
+			"status":   string(newStatus),
+			"error":    err.Error(),
+		})
 		return
 	}
 
-	groupRepo := database.NewGroupRepository()
-	// Idempotent upsert; also guarantees the FK target exists before any association write.
-	if err := groupRepo.Register(groupID); err != nil {
-		logger.Error("Failed to register group", map[string]interface{}{
-			"group_id": groupID,
-			"error":    err.Error(),
-		})
+	if removed {
+		logger.Warn("Bot removed from group", map[string]interface{}{"group_id": groupID, "by": mcm.From.ID})
+		alert.Admins(ctx, fmt.Sprintf("🚪 <b>The bot was removed from %s</b> by %s.\n\n"+
+			"Members of that group are no longer checked or removed by the bot. If this was a mistake, add the bot back and make it an admin.",
+			groupLabel(groupID, mcm.Chat.Title), userLabel(mcm.From)))
+		return
+	}
+	if demoted {
+		logger.Warn("Bot lost administrator rights in group", map[string]interface{}{"group_id": groupID, "by": mcm.From.ID})
+		alert.Admins(ctx, fmt.Sprintf("⚠️ <b>The bot is no longer an admin in %s</b> (changed by %s).\n\n"+
+			"It cannot approve join requests or remove expired members there until it is made admin again.",
+			groupLabel(groupID, mcm.Chat.Title), userLabel(mcm.From)))
+		return
+	}
+
+	if !joined && !promoted {
+		// Restriction tweaks and the like: the status is recorded above, nothing else to do.
 		return
 	}
 
@@ -300,6 +326,26 @@ func groupEnumerateExistingMembers(ctx context.Context, groupID int64) {
 		"associated":   associated,
 		"unregistered": unregistered,
 	})
+}
+
+// groupLabel renders a group for an admin message (HTML).
+func groupLabel(groupID int64, title string) string {
+	if title == "" {
+		return fmt.Sprintf("group <code>%d</code>", groupID)
+	}
+	return fmt.Sprintf("<b>%s</b> (<code>%d</code>)", tolgee.EscapeHTML(title), groupID)
+}
+
+// userLabel renders a Telegram user for an admin message (HTML).
+func userLabel(u models.User) string {
+	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+	if u.Username != "" {
+		name += " (@" + u.Username + ")"
+	}
+	if name == "" {
+		name = "someone"
+	}
+	return fmt.Sprintf("%s [<code>%d</code>]", tolgee.EscapeHTML(name), u.ID)
 }
 
 // groupIsInsideStatus reports whether the given status means the bot is present in the chat.

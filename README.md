@@ -112,7 +112,7 @@ Published to the Telegram command menu (per language) via `SetMyCommands`:
 | `/lang`    | Choose your language (it / en / es / de).                           |
 | `/cancel`  | Abort an in-progress wizard.                                        |
 
-Three more commands are **admin-only** and deliberately not advertised in the menu. A
+Four more commands are **admin-only** and deliberately not advertised in the menu. A
 non-admin gets no reply at all. Admins are seeded from `ADMIN_TELEGRAM_IDS`.
 
 | Command          | What it does                                                          |
@@ -120,9 +120,11 @@ non-admin gets no reply at all. Admins are seeded from `ADMIN_TELEGRAM_IDS`.
 | `/manual_add`    | Register an international member without an `@mensa.it` address.     |
 | `/sweep_preview` | Run a dry-run cleanup sweep now and report who would be removed.      |
 | `/pending`       | List group removals `/elimina` could not finish yet.                  |
+| `/groups`        | List every group, whether the bot is admin there, and its members.    |
 
 The same admins receive Telegram alerts when something needs a human: a tripped circuit
-breaker, a failed sweep, an unhealthy Mensa API, or a removal the bot gave up on. See
+breaker, a failed sweep, an unhealthy Mensa API, a removal the bot gave up on, or the bot
+being removed from a group or losing its admin rights there. See
 [`DEPLOY.md`](DEPLOY.md#admin-alerts).
 
 ## Configuration
