@@ -4,12 +4,9 @@ Every translation key the finished bot renders, built by grepping every
 `tolgee.T(...)` call site (and the two `keyOwnerExpired` / `keyExpiredMembership`
 constants in `cleanup/cleanup.go`). The bot uses **63 keys**.
 
-> ⚠️ **ACTION NEEDED: `telegrambot.deletecommand.deletedpending` is not in Tolgee yet.**
-> Create it, in all 10 languages, before deploying the build that uses it. Until then a
-> member whose `/elimina` hits a Telegram error sees the raw key. See the Delete table below.
-
-**Status: the other 62 keys exist in the Tolgee project, translated into all 10
-project languages** (620 translations). Code and Tolgee are in sync — no key the
+**Status: all 63 keys exist in the Tolgee project.** The first 62 are translated into all
+10 project languages (620 translations). `telegrambot.deletecommand.deletedpending` was added
+on 2026-11-14 in Italian, with the other languages machine-translated by Tolgee. Code and Tolgee are in sync — no key the
 bot renders is missing, and no key in the project is unused. The bot renders the
 raw dotted key for anything missing, so keep it that way: if you add a
 `tolgee.T(...)` call, create the key before deploying.
@@ -95,7 +92,7 @@ The **Status** column records each key's origin:
 | `telegrambot.deletecommand.confirmbutton` | **NEW** | delete_handler | "Confirm deletion" button label | — |
 | `telegrambot.deletecommand.deleted` | existing | delete_handler | Profile deleted confirmation | — |
 | `telegrambot.deletecommand.ownerdeleted` | existing | delete_handler, membership retrier | Posted in a group whose owner deleted their profile (owners can't be kicked) | — |
-| `telegrambot.deletecommand.deletedpending` | **NEW, not in Tolgee yet** | delete_handler, profile_card | Profile deleted, but removal from `{count}` group(s) failed for now and will be retried automatically. E.g. it: "Il tuo profilo è stato eliminato. Non è stato ancora possibile rimuoverti da {count} gruppo/i: riproveremo automaticamente." | `{count}` |
+| `telegrambot.deletecommand.deletedpending` | **NEW** (2026-11-14) | delete_handler, profile_card | Profile deleted, but removal from `{count}` group(s) failed for now and will be retried automatically. E.g. it: "Il tuo profilo è stato eliminato. Non è stato ancora possibile rimuoverti da {count} gruppo/i: riproveremo automaticamente." | `{count}` |
 
 ## App (`/app`)
 
