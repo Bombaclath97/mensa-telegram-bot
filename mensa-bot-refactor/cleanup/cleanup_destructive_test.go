@@ -333,3 +333,24 @@ func TestCircuitBreakerMakesNoTelegramCalls(t *testing.T) {
 		t.Fatal("a tripped breaker must delete nobody")
 	}
 }
+
+// An expired member whom the group's admins had already banned stays banned. The old code
+// banned and then unbanned them, which lifted the admins' ban.
+func TestBannedExpiredMemberKeepsAdminBan(t *testing.T) {
+	armDestructive(t, map[string]bool{"131": false})
+	insertUser(t, 600031, 131)
+	insertAssoc(t, 600031, groupA)
+	fakeTG.SetStatus(groupA, 600031, "kicked")
+
+	report := mustRun(t)
+
+	if fakeTG.Called("unbanChatMember", groupA, 0) || fakeTG.Called("banChatMember", groupA, 0) {
+		t.Fatal("a member banned by the group's admins must not be banned or unbanned again")
+	}
+	if userExists(t, 600031) {
+		t.Fatal("already out of the group counts as resolved: the row should be deleted")
+	}
+	if report.KickedFromGroup != 0 || report.Deleted != 1 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+}

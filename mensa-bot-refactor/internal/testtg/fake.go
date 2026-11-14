@@ -36,7 +36,12 @@ type Call struct {
 type APIError struct {
 	Code        int
 	Description string
+	// RetryAfter is sent as parameters.retry_after, which Telegram sets on a 429.
+	RetryAfter int
 }
+
+// ErrTooManyRequests is Telegram's rate-limit answer.
+var ErrTooManyRequests = &APIError{Code: 429, Description: "Too Many Requests: retry after 1", RetryAfter: 1}
 
 // ErrChatNotFound is what Telegram answers for a chat the bot can no longer see.
 var ErrChatNotFound = &APIError{Code: 400, Description: "Bad Request: chat not found"}
@@ -57,7 +62,12 @@ type Server struct {
 	mu       sync.Mutex
 	calls    []Call
 	statuses map[[2]int64]string // (chat, user) -> chat member status
-	failures map[key]*APIError   // (method, chat, user) -> error; user 0 matches any user
+	failures map[key]*failure    // (method, chat, user) -> error; user 0 matches any user
+}
+
+type failure struct {
+	err       *APIError
+	remaining int // calls left to fail; -1 fails forever
 }
 
 // Install starts the fake and wires the telegram_bot singleton to it. Call it once, from
@@ -85,7 +95,7 @@ func (s *Server) Reset() {
 	defer s.mu.Unlock()
 	s.calls = nil
 	s.statuses = map[[2]int64]string{}
-	s.failures = map[key]*APIError{}
+	s.failures = map[key]*failure{}
 }
 
 // SetStatus sets what getChatMember reports for user in chat: "creator", "administrator",
@@ -98,9 +108,15 @@ func (s *Server) SetStatus(chatID, userID int64, status string) {
 
 // Fail makes method fail for (chat, user). userID 0 matches any user in that chat.
 func (s *Server) Fail(method string, chatID, userID int64, e *APIError) {
+	s.FailTimes(method, chatID, userID, e, -1)
+}
+
+// FailTimes is Fail for only the next n matching calls; after that the method succeeds.
+// n < 0 fails forever.
+func (s *Server) FailTimes(method string, chatID, userID int64, e *APIError, n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.failures[key{method, chatID, userID}] = e
+	s.failures[key{method, chatID, userID}] = &failure{err: e, remaining: n}
 }
 
 // Calls returns every recorded call, optionally filtered to one method.
@@ -146,18 +162,27 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.calls = append(s.calls, Call{Method: method, ChatID: chatID, UserID: userID, Text: r.FormValue("text")})
-	failure := s.failures[key{method, chatID, userID}]
-	if failure == nil {
-		failure = s.failures[key{method, chatID, 0}]
+	f := s.failures[key{method, chatID, userID}]
+	if f == nil || f.remaining == 0 {
+		f = s.failures[key{method, chatID, 0}]
+	}
+	var apiErr *APIError
+	if f != nil && f.remaining != 0 {
+		apiErr = f.err
+		if f.remaining > 0 {
+			f.remaining--
+		}
 	}
 	status := s.statuses[[2]int64{chatID, userID}]
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	if failure != nil {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ok": false, "error_code": failure.Code, "description": failure.Description,
-		})
+	if apiErr != nil {
+		body := map[string]any{"ok": false, "error_code": apiErr.Code, "description": apiErr.Description}
+		if apiErr.RetryAfter > 0 {
+			body["parameters"] = map[string]any{"retry_after": apiErr.RetryAfter}
+		}
+		_ = json.NewEncoder(w).Encode(body)
 		return
 	}
 

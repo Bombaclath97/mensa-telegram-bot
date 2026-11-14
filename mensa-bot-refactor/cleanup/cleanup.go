@@ -59,6 +59,7 @@ import (
 	"github.com/Bombaclath97/mensa-telegram-bot/api"
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Bombaclath97/mensa-telegram-bot/membership"
 	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
 	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
 
@@ -610,114 +611,74 @@ const (
 
 // cleanupHandleGroup removes ONE expired member from ONE group.
 //
-//	creator       -> cannot be kicked at all; warn the group instead (legacy behaviour)
-//	administrator -> demote first, then kick
-//	anything else -> kick (ban + unban, i.e. a kick, not a permaban)
+// The Telegram work is membership.RemoveFromGroup, shared with /elimina. This wrapper adds
+// what is specific to the sweep: its report, its audit log lines, and dropping the stale
+// association when the group is gone.
+//
+//	creator        -> cannot be kicked at all; warn the group instead
+//	administrator  -> demote first, then kick
+//	left / banned  -> already out; nothing is sent (an admin's ban is never lifted)
+//	anything else  -> kick (ban + unban, i.e. a kick, not a permaban)
 func cleanupHandleGroup(ctx context.Context, user database.User, groupID int64, cfg cleanupConfig, report *Report) groupOutcome {
-	cleanupThrottle(cfg)
-	member, err := tb.GetChatMember(ctx, groupID, user.TelegramID)
-	if err != nil {
-		if cleanupIsGroupGone(err) {
-			logger.Warn("cleanup: group is unreachable (bot removed or chat deleted), dropping the stale association", map[string]interface{}{
-				"telegram_id": user.TelegramID,
-				"group_id":    groupID,
-				"error":       err.Error(),
-			})
-			if !cfg.dryRun {
-				assocRepo := database.NewGroupAssociationRepository()
-				if delErr := assocRepo.Delete(user.TelegramID, groupID); delErr != nil {
-					logger.Warn("cleanup: could not drop the stale association", map[string]interface{}{
-						"telegram_id": user.TelegramID,
-						"group_id":    groupID,
-						"error":       delErr.Error(),
-					})
-				}
-			}
-			return groupOutcomeGone
-		}
-		// We do not know their role. Kicking blind risks nothing worse than a failed call, but
-		// it would also skip the required demote, so treat it as transient and retry.
-		logger.Error("cleanup: could not read the member's role in the group, skipping this group", map[string]interface{}{
-			"telegram_id": user.TelegramID,
-			"group_id":    groupID,
-			"error":       err.Error(),
-		})
-		return groupOutcomeFailed
-	}
-	if member == nil {
-		logger.Error("cleanup: got no chat member back, skipping this group", map[string]interface{}{
-			"telegram_id": user.TelegramID,
-			"group_id":    groupID,
-		})
-		return groupOutcomeFailed
+	fields := map[string]interface{}{
+		"telegram_id": user.TelegramID,
+		"group_id":    groupID,
 	}
 
-	// The group owner cannot be kicked or demoted by anyone, bot included. Warn the group and
-	// leave them in place; a human has to sort it out.
-	if member.Type == models.ChatMemberTypeOwner || member.Owner != nil {
-		logger.Warn("cleanup: expired member is the OWNER of the group — cannot demote or kick them, warning the group instead", map[string]interface{}{
-			"telegram_id": user.TelegramID,
-			"group_id":    groupID,
-		})
-		report.OwnersWarned++
-		if cfg.dryRun {
-			logger.Info("cleanup: [DRY RUN] would warn the group about its expired owner", map[string]interface{}{
-				"group_id": groupID,
-			})
-			return groupOutcomeOwnerWarned
+	res := membership.RemoveFromGroup(ctx, groupID, user.TelegramID, membership.Options{
+		DryRun:      cfg.dryRun,
+		Delay:       cfg.telegramDelay,
+		OwnerNotice: tolgee.T(keyOwnerExpired, database.DefaultLanguage),
+	})
+	if res.Role != "" {
+		fields["role"] = string(res.Role)
+	}
+	if res.Err != nil {
+		fields["error"] = res.Err.Error()
+	}
+
+	switch res.Outcome {
+	case membership.Gone:
+		logger.Warn("cleanup: group is unreachable (bot removed or chat deleted), dropping the stale association", fields)
+		if !cfg.dryRun {
+			assocRepo := database.NewGroupAssociationRepository()
+			if delErr := assocRepo.Delete(user.TelegramID, groupID); delErr != nil {
+				fields["error"] = delErr.Error()
+				logger.Warn("cleanup: could not drop the stale association", fields)
+			}
 		}
-		cleanupThrottle(cfg)
-		if _, err := tb.Send(ctx, groupID, tolgee.T(keyOwnerExpired, database.DefaultLanguage)); err != nil {
-			logger.Warn("cleanup: could not warn the group about its expired owner", map[string]interface{}{
-				"group_id": groupID,
-				"error":    err.Error(),
-			})
+		return groupOutcomeGone
+
+	case membership.Failed:
+		// Covers both an unreadable role (kicking blind would skip the required demote) and
+		// a failed kick. Either way the row is kept and the next sweep retries.
+		logger.Error("cleanup: FAILED to remove the member from the group, will retry next sweep", fields)
+		return groupOutcomeFailed
+
+	case membership.AlreadyOut:
+		logger.Info("cleanup: member is no longer in the group (left or banned), nothing to do", fields)
+		return groupOutcomeGone
+
+	case membership.OwnerWarned:
+		report.OwnersWarned++
+		logger.Warn("cleanup: expired member is the OWNER of the group — cannot demote or kick them, warning the group instead", fields)
+		if cfg.dryRun {
+			logger.Info("cleanup: [DRY RUN] would warn the group about its expired owner", fields)
 		}
 		return groupOutcomeOwnerWarned
 	}
 
+	// Kicked.
 	if cfg.dryRun {
-		logger.Info("cleanup: [DRY RUN] would kick the member from the group", map[string]interface{}{
-			"telegram_id":        user.TelegramID,
-			"group_id":           groupID,
-			"role":               string(member.Type),
-			"would_demote_first": member.Type == models.ChatMemberTypeAdministrator || member.Administrator != nil,
-		})
+		fields["would_demote_first"] = res.Role == models.ChatMemberTypeAdministrator
+		logger.Info("cleanup: [DRY RUN] would kick the member from the group", fields)
 		return groupOutcomeKicked
 	}
-
-	// An administrator must be demoted before being kicked.
-	if member.Type == models.ChatMemberTypeAdministrator || member.Administrator != nil {
-		logger.Info("cleanup: expired member is an admin of the group, demoting them first", map[string]interface{}{
-			"telegram_id": user.TelegramID,
-			"group_id":    groupID,
-		})
-		cleanupThrottle(cfg)
-		if _, err := tb.DemoteUser(ctx, groupID, user.TelegramID); err != nil {
-			// Not fatal: the kick below may still succeed.
-			logger.Warn("cleanup: could not demote the member, attempting the kick anyway", map[string]interface{}{
-				"telegram_id": user.TelegramID,
-				"group_id":    groupID,
-				"error":       err.Error(),
-			})
-		}
+	if res.DemoteFailed {
+		logger.Warn("cleanup: could not demote the member, the kick went through anyway", fields)
 	}
-
-	cleanupThrottle(cfg)
-	if err := tb.KickUser(ctx, groupID, user.TelegramID); err != nil {
-		logger.Error("cleanup: FAILED to kick the member from the group", map[string]interface{}{
-			"telegram_id": user.TelegramID,
-			"group_id":    groupID,
-			"error":       err.Error(),
-		})
-		return groupOutcomeFailed
-	}
-
 	report.KickedFromGroup++
-	logger.Info("cleanup: kicked the expired member from the group", map[string]interface{}{
-		"telegram_id": user.TelegramID,
-		"group_id":    groupID,
-	})
+	logger.Info("cleanup: kicked the expired member from the group", fields)
 	return groupOutcomeKicked
 }
 
@@ -753,30 +714,6 @@ func cleanupAssertDTODecodes() error {
 		}
 	})
 	return dtoAssertErr
-}
-
-// cleanupIsGroupGone reports whether a Telegram error means the group is permanently
-// unreachable (deleted, or the bot was removed from it) rather than a transient failure.
-// Erring here is safe in both directions: a false positive only drops a stale association,
-// a false negative only defers a removal to the next sweep. It never deletes a user.
-func cleanupIsGroupGone(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	for _, s := range []string{
-		"chat not found",
-		"bot is not a member",
-		"bot was kicked",
-		"group chat was upgraded",
-		"chat_id is empty",
-		"user not found",
-	} {
-		if strings.Contains(msg, s) {
-			return true
-		}
-	}
-	return false
 }
 
 // cleanupThrottle paces our Telegram calls. The legacy fired an unbounded goroutine per

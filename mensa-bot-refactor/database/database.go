@@ -86,7 +86,7 @@ func Init() error {
 		sqlDB.SetConnMaxLifetime(connMaxLifetime)
 
 		// Auto-migrate the schema
-		err = db.AutoMigrate(&User{}, &Group{}, &GroupAssociation{}, &PendingJoinRequest{}, &UserPreference{})
+		err = db.AutoMigrate(&User{}, &Group{}, &GroupAssociation{}, &PendingJoinRequest{}, &UserPreference{}, &PendingRemoval{})
 		if err != nil {
 			initErr = err
 			return
