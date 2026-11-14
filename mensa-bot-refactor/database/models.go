@@ -118,3 +118,23 @@ type UserPreference struct {
 func (UserPreference) TableName() string {
 	return "user_preferences"
 }
+
+// PendingRemoval records a group a member still has to be kicked from after their profile
+// was deleted (/elimina). The profile goes immediately, because the member asked for that;
+// this row keeps only what is needed to finish the job, and membership.DrainPendingRemovals
+// retries it in the background.
+//
+// No foreign keys and no personal data, on purpose: the user row is already gone, and the
+// group row may be dropped too without this record vanishing with it.
+type PendingRemoval struct {
+	UserID    int64     `gorm:"primaryKey;autoIncrement:false;not null" json:"user_id"`
+	GroupID   int64     `gorm:"primaryKey;autoIncrement:false;not null" json:"group_id"`
+	Attempts  int       `gorm:"not null;default:0" json:"attempts"`
+	LastError string    `json:"last_error"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (PendingRemoval) TableName() string {
+	return "pending_removals"
+}

@@ -75,6 +75,7 @@ func setupDelete(t *testing.T) {
 		}
 	}
 	fakeTG.Reset()
+	t.Setenv("CLEANUP_TELEGRAM_DELAY_MS", "0")
 }
 
 func addMember(t *testing.T, telegramID int64, groups ...int64) {
@@ -121,7 +122,7 @@ func TestDeleteMemberEverywhereKicksFromAllGroups(t *testing.T) {
 	setupDelete(t)
 	addMember(t, 700001, delGroupA, delGroupB)
 
-	if err := DeleteMemberEverywhere(context.Background(), 700001, "it"); err != nil {
+	if _, err := DeleteMemberEverywhere(context.Background(), 700001, "it"); err != nil {
 		t.Fatalf("DeleteMemberEverywhere: %v", err)
 	}
 
@@ -144,7 +145,7 @@ func TestDeleteMemberEverywhereDemotesAdminFirst(t *testing.T) {
 	addMember(t, 700002, delGroupA)
 	fakeTG.SetStatus(delGroupA, 700002, "administrator")
 
-	if err := DeleteMemberEverywhere(context.Background(), 700002, "it"); err != nil {
+	if _, err := DeleteMemberEverywhere(context.Background(), 700002, "it"); err != nil {
 		t.Fatalf("DeleteMemberEverywhere: %v", err)
 	}
 
@@ -171,7 +172,7 @@ func TestDeleteMemberEverywhereWarnsGroupForOwner(t *testing.T) {
 	addMember(t, 700003, delGroupA, delGroupB)
 	fakeTG.SetStatus(delGroupA, 700003, "creator")
 
-	if err := DeleteMemberEverywhere(context.Background(), 700003, "it"); err != nil {
+	if _, err := DeleteMemberEverywhere(context.Background(), 700003, "it"); err != nil {
 		t.Fatalf("DeleteMemberEverywhere: %v", err)
 	}
 
@@ -195,7 +196,7 @@ func TestDeleteMemberEverywhereSkipsUnreachableGroup(t *testing.T) {
 	addMember(t, 700004, delGroupA, delGroupB)
 	fakeTG.Fail("getChatMember", delGroupA, 0, testtg.ErrChatNotFound)
 
-	if err := DeleteMemberEverywhere(context.Background(), 700004, "it"); err != nil {
+	if _, err := DeleteMemberEverywhere(context.Background(), 700004, "it"); err != nil {
 		t.Fatalf("DeleteMemberEverywhere: %v", err)
 	}
 
@@ -216,7 +217,7 @@ func TestDeleteMemberEverywhereTouchesNobodyElse(t *testing.T) {
 	addMember(t, 700005, delGroupA)
 	addMember(t, 700006, delGroupA)
 
-	if err := DeleteMemberEverywhere(context.Background(), 700005, "it"); err != nil {
+	if _, err := DeleteMemberEverywhere(context.Background(), 700005, "it"); err != nil {
 		t.Fatalf("DeleteMemberEverywhere: %v", err)
 	}
 
@@ -235,7 +236,7 @@ func TestDeleteMemberEverywhereWithNoGroups(t *testing.T) {
 	setupDelete(t)
 	addMember(t, 700007)
 
-	if err := DeleteMemberEverywhere(context.Background(), 700007, "it"); err != nil {
+	if _, err := DeleteMemberEverywhere(context.Background(), 700007, "it"); err != nil {
 		t.Fatalf("DeleteMemberEverywhere: %v", err)
 	}
 	if n := len(fakeTG.Calls("")); n != 0 {
@@ -243,5 +244,97 @@ func TestDeleteMemberEverywhereWithNoGroups(t *testing.T) {
 	}
 	if memberExists(t, 700007) {
 		t.Fatal("row should be gone")
+	}
+}
+
+func pendingRemovals(t *testing.T, telegramID int64) []database.PendingRemoval {
+	t.Helper()
+	var rows []database.PendingRemoval
+	database.Get().Where("user_id = ?", telegramID).Order("group_id").Find(&rows)
+	return rows
+}
+
+// The bug this replaces: a Telegram error used to be ignored, the row deleted anyway, and the
+// member left inside the group with no record. Now the profile still goes (they asked for
+// that), but the failed group is queued for a retry and the result says so.
+func TestDeleteMemberEverywhereQueuesFailedGroups(t *testing.T) {
+	setupDelete(t)
+	addMember(t, 700010, delGroupA, delGroupB)
+	fakeTG.Fail("getChatMember", delGroupA, 700010, testtg.ErrTransient)
+
+	res, err := DeleteMemberEverywhere(context.Background(), 700010, "it")
+	if err != nil {
+		t.Fatalf("DeleteMemberEverywhere: %v", err)
+	}
+
+	if len(res.PendingGroups) != 1 || res.PendingGroups[0] != delGroupA {
+		t.Fatalf("want group A pending, got %v", res.PendingGroups)
+	}
+	if memberExists(t, 700010) {
+		t.Fatal("the profile must be deleted even when a group failed")
+	}
+	rows := pendingRemovals(t, 700010)
+	if len(rows) != 1 || rows[0].GroupID != delGroupA {
+		t.Fatalf("want one pending removal for group A, got %+v", rows)
+	}
+	if !fakeTG.Kicked(delGroupB, 700010) {
+		t.Fatal("the group that worked should still be handled")
+	}
+}
+
+func TestDeleteMemberEverywhereQueuesFailedKick(t *testing.T) {
+	setupDelete(t)
+	addMember(t, 700011, delGroupA)
+	fakeTG.Fail("banChatMember", delGroupA, 700011, testtg.ErrTransient)
+
+	res, err := DeleteMemberEverywhere(context.Background(), 700011, "it")
+	if err != nil {
+		t.Fatalf("DeleteMemberEverywhere: %v", err)
+	}
+	if len(res.PendingGroups) != 1 || len(pendingRemovals(t, 700011)) != 1 {
+		t.Fatalf("a failed kick must be queued, got %v", res.PendingGroups)
+	}
+}
+
+// A clean deletion leaves nothing in the retry queue.
+func TestDeleteMemberEverywhereCleanRunQueuesNothing(t *testing.T) {
+	setupDelete(t)
+	addMember(t, 700012, delGroupA)
+
+	res, err := DeleteMemberEverywhere(context.Background(), 700012, "it")
+	if err != nil {
+		t.Fatalf("DeleteMemberEverywhere: %v", err)
+	}
+	if len(res.PendingGroups) != 0 || len(pendingRemovals(t, 700012)) != 0 {
+		t.Fatalf("nothing should be pending, got %v", res.PendingGroups)
+	}
+}
+
+// A member the group's admins banned must stay banned. The old code banned and then unbanned
+// them, lifting the admins' ban.
+func TestDeleteMemberEverywhereKeepsAdminBan(t *testing.T) {
+	setupDelete(t)
+	addMember(t, 700013, delGroupA)
+	fakeTG.SetStatus(delGroupA, 700013, "kicked")
+
+	res, err := DeleteMemberEverywhere(context.Background(), 700013, "it")
+	if err != nil {
+		t.Fatalf("DeleteMemberEverywhere: %v", err)
+	}
+	if fakeTG.Called("unbanChatMember", delGroupA, 0) || fakeTG.Called("banChatMember", delGroupA, 0) {
+		t.Fatal("a banned member must not be banned or unbanned again")
+	}
+	if len(res.PendingGroups) != 0 || memberExists(t, 700013) {
+		t.Fatal("already banned counts as removed: nothing pending, profile deleted")
+	}
+}
+
+// The user is told the truth about what happened.
+func TestDeletedMessagePicksTheRightKey(t *testing.T) {
+	if got := deletedMessage(DeleteResult{}, "it"); got != "telegrambot.deletecommand.deleted" {
+		t.Fatalf("clean deletion: got %q", got)
+	}
+	if got := deletedMessage(DeleteResult{PendingGroups: []int64{1, 2}}, "it"); got != "telegrambot.deletecommand.deletedpending" {
+		t.Fatalf("partial deletion: got %q", got)
 	}
 }
