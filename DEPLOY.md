@@ -192,7 +192,9 @@ The bot DMs every `ADMIN_TELEGRAM_IDS` admin when something needs a human:
 - a sweep found expired members (in dry run: who *would* be removed), could not fully remove
   someone, or found an expired group owner it cannot kick;
 - more than half of the Mensa API checks were inconclusive (the API looks unhealthy);
-- the bot gave up removing a member who used `/elimina` (`/pending` lists the queue).
+- the bot gave up removing a member who used `/elimina` (`/pending` lists the queue);
+- the bot was removed from a group, lost its admin rights there, or found a group it can no
+  longer see (`/groups` lists every group and the bot's status in each).
 
 A quiet sweep sends nothing. `/sweep_preview` itself never triggers an alert.
 

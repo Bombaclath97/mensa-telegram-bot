@@ -724,6 +724,7 @@ func cleanupHandleGroup(ctx context.Context, user database.User, groupID int64, 
 	case membership.Gone:
 		logger.Warn("cleanup: group is unreachable (bot removed or chat deleted), dropping the stale association", fields)
 		if !cfg.dryRun {
+			membership.RecordBotGone(ctx, groupID, res.Err)
 			assocRepo := database.NewGroupAssociationRepository()
 			if delErr := assocRepo.Delete(user.TelegramID, groupID); delErr != nil {
 				fields["error"] = delErr.Error()
