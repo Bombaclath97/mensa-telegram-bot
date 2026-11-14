@@ -15,7 +15,7 @@ is meant to sit behind a reverse proxy that terminates TLS.
 | `API_ENDPOINT` | — | Base URL of the Mensa Italia API used for membership verification and validity checks. |
 | `API_BEARER_TOKEN` | — | Bearer token for the Mensa API. |
 | `CALLME_BASE_URL` | — | Public origin of this service **plus** the callback path `/callme_api`. The Mensa app receives `{CALLME_BASE_URL}/{token}` and the service serves `POST /callme_api/{token}`; a mismatch makes every approval callback 404. |
-| `ADMIN_TELEGRAM_IDS` | (empty) | Comma-separated Telegram user IDs flagged `is_bot_admin` on boot; the only users allowed to run `/manual_add`. Empty disables `/manual_add` for everyone. |
+| `ADMIN_TELEGRAM_IDS` | (empty) | Comma-separated Telegram user IDs flagged `is_bot_admin` on boot; the only users allowed to run the admin commands (`/manual_add`, `/sweep_preview`, `/pending`), and the recipients of operational alerts. Each admin must press Start on the bot once to receive alerts. Empty disables all of it. |
 
 ## HTTP server
 

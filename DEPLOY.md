@@ -127,7 +127,7 @@ Set these where you deploy (Portainer's stack env, or your shell):
 | -------- | -------- | ----- |
 | `API_ENDPOINT` | yes | Mensa membership API base URL, e.g. `https://svc.mensa.it/api/cs/exapp` |
 | `CALLME_BASE_URL` | yes | **public** origin + `/callme_api` — `https://telegrambot.svc.mensa.it/callme_api`; anything else 404s every approval |
-| `ADMIN_TELEGRAM_IDS` | no | comma-separated; blank disables `/manual_add` for everyone |
+| `ADMIN_TELEGRAM_IDS` | no | comma-separated. These admins can use `/manual_add`, `/sweep_preview` and `/pending`, and receive alerts. Each admin must press Start on the bot once, or Telegram refuses the DMs. Blank disables all of that |
 | `MENSA_BOT_IMAGE` | no | defaults to `:latest` |
 | `CLEANUP_DRY_RUN` | no | **defaults to `true`** — read below before changing |
 
@@ -169,8 +169,11 @@ rows. Do not flip it until:
   `handlers/delete_member_test.go`, both against the fake Bot API in `internal/testtg`;
 - ✅ `CLEANUP_MAX_DELETIONS` is low for the first live sweep: `docker-stack.yml` defaults it
   to `3`. Check Portainer's stack environment does not override it with something larger;
-- you have read one dry-run's audit log and recognise the names in it. Look for the lines
-  `cleanup: member has an EXPIRED membership` and `[DRY RUN] would kick`:
+- you have read one dry run and recognise the names in it. The quickest way is to send
+  **`/sweep_preview`** to the bot as an admin: it runs a full dry-run sweep straight away and
+  replies with who is expired, how many groups each is in, and whether the circuit breaker
+  would trip. It changes nothing, even when the sweep is armed. Or read the logs of a
+  scheduled dry run:
 
   ```sh
   docker service logs mensa_mensa-bot 2>&1 | grep -E 'EXPIRED membership|DRY RUN|CIRCUIT BREAKER'
@@ -180,6 +183,18 @@ rows. Do not flip it until:
   trip the breaker and do nothing. That is correct behaviour, not a bug; find out why first.
 
 Then set `CLEANUP_DRY_RUN=false` in the stack environment and redeploy.
+
+### Admin alerts
+
+The bot DMs every `ADMIN_TELEGRAM_IDS` admin when something needs a human:
+
+- a scheduled sweep tripped the circuit breaker, or failed;
+- a sweep found expired members (in dry run: who *would* be removed), could not fully remove
+  someone, or found an expired group owner it cannot kick;
+- more than half of the Mensa API checks were inconclusive (the API looks unhealthy);
+- the bot gave up removing a member who used `/elimina` (`/pending` lists the queue).
+
+A quiet sweep sends nothing. `/sweep_preview` itself never triggers an alert.
 
 See `CUTOVER.md` for the group-takeover process, which is a separate and even more destructive
 thing.
