@@ -132,6 +132,21 @@ sweep only logs what it would do — read those logs before setting it to `false
 | `CLEANUP_TELEGRAM_DELAY_MS` | `100` | Delay between Telegram actions to stay within rate limits. |
 | `CLEANUP_SKIP_BOT_ADMINS` | `true` | Never sweep users flagged `is_bot_admin`. |
 
+`CLEANUP_TELEGRAM_DELAY_MS` also paces `/elimina`, which removes members from groups through
+the same code (`membership.RemoveFromGroup`).
+
+## Pending removals (`/elimina` retries)
+
+`/elimina` deletes the member's profile immediately. A group it could not remove them from
+right now (a Telegram error or rate limit) is stored in `pending_removals` and retried in the
+background. This is **not** affected by `CLEANUP_DRY_RUN`: every row is a member who asked to
+leave. After 5 failed retries the row stays in the table, is no longer retried, and an
+`ERROR` log line says an admin has to remove the member by hand.
+
+| Variable | Default | Description |
+|---|---|---|
+| `PENDING_REMOVAL_INTERVAL_MINUTES` | `60` | How often pending removals are retried. The first pass runs at boot. |
+
 ## Group-sync backfill
 
 `SyncMemberGroups` runs once per member, at registration, and stamps

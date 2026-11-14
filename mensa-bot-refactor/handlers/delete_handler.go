@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Bombaclath97/mensa-telegram-bot/membership"
 	"github.com/Bombaclath97/mensa-telegram-bot/model"
 	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
 	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
@@ -91,14 +93,12 @@ func DeleteCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Updat
 	})
 
 	userRepo := database.NewUserRepository()
-	groupAssocRepo := database.NewGroupAssociationRepository()
 	lang := userRepo.GetLanguage(userID)
-
-	_ = groupAssocRepo // deletion goes through DeleteMemberEverywhere
 
 	switch q.Data {
 	case "delete:confirm":
-		if err := DeleteMemberEverywhere(ctx, userID, lang); err != nil {
+		res, err := DeleteMemberEverywhere(ctx, userID, lang)
+		if err != nil {
 			tb.AnswerCallbackSilent(ctx, q.ID)
 			tb.Send(ctx, chatID, tolgee.T("telegrambot.general.error", lang))
 			return
@@ -107,7 +107,7 @@ func DeleteCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Updat
 		// Delete the confirmation message
 		tb.DeleteMessage(ctx, chatID, messageID)
 
-		tb.Send(ctx, chatID, tolgee.T("telegrambot.deletecommand.deleted", lang))
+		tb.Send(ctx, chatID, deletedMessage(res, lang))
 
 	case "delete:cancel":
 		// Delete the confirmation message
@@ -119,16 +119,28 @@ func DeleteCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Updat
 	tb.AnswerCallbackSilent(ctx, q.ID)
 }
 
-// DeleteMemberEverywhere kicks a member out of every group the bot manages and then deletes
-// their row (the group associations cascade with it).
+// DeleteResult describes a completed DeleteMemberEverywhere.
+type DeleteResult struct {
+	// PendingGroups are the groups the member could not be removed from right now. Their
+	// profile is deleted regardless; these are queued in pending_removals and retried by
+	// membership.StartPendingRemovals.
+	PendingGroups []int64
+}
+
+// DeleteMemberEverywhere removes a member from every group the bot manages and deletes their
+// profile (the group associations cascade with it).
 //
-// It is the single implementation of "remove this member", shared by /elimina and the
-// profile card's delete button — a destructive path duplicated in two places is a path
-// where only one copy gets the next bug fix.
+// It is the single implementation of "remove this member at their request", shared by
+// /elimina and the profile card's delete button. The per-group work is membership.
+// RemoveFromGroup, the same code the expiry sweep uses.
 //
-// A group lookup failure ABORTS: deleting the row first would cascade the associations
-// away and destroy the only record of which groups the member still needs kicking from.
-func DeleteMemberEverywhere(ctx context.Context, userID int64, lang string) error {
+// The member asked for their data to be deleted, so the profile is deleted even when some
+// group could not be handled right now. Those groups are recorded in pending_removals, in the
+// same transaction, so the bot never loses track of a group it still has to remove them from.
+//
+// An error means nothing in the database changed: the group lookup or the transaction failed.
+func DeleteMemberEverywhere(ctx context.Context, userID int64, lang string) (DeleteResult, error) {
+	var result DeleteResult
 	userRepo := database.NewUserRepository()
 	groupAssocRepo := database.NewGroupAssociationRepository()
 
@@ -138,37 +150,54 @@ func DeleteMemberEverywhere(ctx context.Context, userID int64, lang string) erro
 			"error":   err.Error(),
 			"user_id": userID,
 		})
-		return err
+		return result, err
 	}
 
+	opt := membership.Options{
+		Delay:       membership.DefaultDelay(),
+		OwnerNotice: tolgee.T("telegrambot.deletecommand.ownerdeleted", lang),
+	}
 	for _, assoc := range groups {
-		chatMember, err := tb.GetChatMember(ctx, assoc.GroupID, userID)
-		if err != nil {
+		res := membership.RemoveFromGroup(ctx, assoc.GroupID, userID, opt)
+		fields := map[string]interface{}{
+			"user_id":  userID,
+			"group_id": assoc.GroupID,
+			"outcome":  res.Outcome.String(),
+			"role":     string(res.Role),
+		}
+		if res.Err != nil {
+			fields["error"] = res.Err.Error()
+		}
+		if res.Outcome == membership.Failed {
+			result.PendingGroups = append(result.PendingGroups, assoc.GroupID)
+			logger.Warn("Could not remove member from group, queueing a retry", fields)
 			continue
 		}
-
-		// An owner cannot be kicked by a bot — Telegram forbids it. Tell the group instead.
-		if chatMember.Owner != nil && chatMember.Owner.Status == "creator" {
-			tb.Send(ctx, assoc.GroupID, tolgee.T("telegrambot.deletecommand.ownerdeleted", lang))
-			continue
-		}
-
-		// An admin must be demoted before they can be kicked.
-		if chatMember.Administrator != nil && chatMember.Administrator.Status == "administrator" {
-			tb.DemoteUser(ctx, assoc.GroupID, userID)
-		}
-
-		tb.KickUser(ctx, assoc.GroupID, userID)
+		logger.Info("Removed member from group", fields)
 	}
 
-	if err := userRepo.Delete(userID); err != nil {
+	if err := userRepo.DeleteWithPendingRemovals(userID, result.PendingGroups); err != nil {
 		logger.Error("Failed to delete user", map[string]interface{}{
 			"error":   err.Error(),
 			"user_id": userID,
 		})
-		return err
+		return DeleteResult{}, err
 	}
 
-	logger.Info("User deleted", map[string]interface{}{"user_id": userID, "groups": len(groups)})
-	return nil
+	logger.Info("User deleted", map[string]interface{}{
+		"user_id":        userID,
+		"groups":         len(groups),
+		"pending_groups": len(result.PendingGroups),
+	})
+	return result, nil
+}
+
+// deletedMessage is what the member is told after DeleteMemberEverywhere succeeds.
+func deletedMessage(res DeleteResult, lang string) string {
+	if len(res.PendingGroups) == 0 {
+		return tolgee.T("telegrambot.deletecommand.deleted", lang)
+	}
+	return tolgee.T("telegrambot.deletecommand.deletedpending", lang, map[string]string{
+		"count": strconv.Itoa(len(res.PendingGroups)),
+	})
 }

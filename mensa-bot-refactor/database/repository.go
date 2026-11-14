@@ -446,3 +446,68 @@ func (r *PendingJoinRequestRepository) DeleteForUser(userID int64) error {
 func (r *PendingJoinRequestRepository) Delete(userID, groupID int64) error {
 	return Get().Delete(&PendingJoinRequest{}, "user_id = ? AND group_id = ?", userID, groupID).Error
 }
+
+// DeleteWithPendingRemovals deletes a user and, in the same transaction, records every group
+// they still have to be kicked from. Either both happen or neither does: deleting the row
+// alone would cascade away the only record of those groups.
+//
+// The user row's group associations cascade with it, as with Delete.
+func (r *UserRepository) DeleteWithPendingRemovals(telegramID int64, pendingGroupIDs []int64) error {
+	return Get().Transaction(func(tx *gorm.DB) error {
+		for _, groupID := range pendingGroupIDs {
+			// Idempotent: a second /elimina for the same group keeps the existing row and its
+			// attempt count.
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+				Create(&PendingRemoval{UserID: telegramID, GroupID: groupID}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Delete(&User{}, "telegram_id = ?", telegramID).Error
+	})
+}
+
+// PendingRemovalRepository handles the /elimina retry queue (see PendingRemoval).
+type PendingRemovalRepository struct{}
+
+func NewPendingRemovalRepository() *PendingRemovalRepository {
+	return &PendingRemovalRepository{}
+}
+
+// List returns pending removals with fewer than maxAttempts attempts, oldest first.
+// maxAttempts <= 0 returns every row.
+func (r *PendingRemovalRepository) List(maxAttempts int) ([]PendingRemoval, error) {
+	var rows []PendingRemoval
+	q := Get().Order("created_at ASC")
+	if maxAttempts > 0 {
+		q = q.Where("attempts < ?", maxAttempts)
+	}
+	return rows, q.Find(&rows).Error
+}
+
+// RecordFailure bumps the attempt count and stores the latest error. Returns the new count.
+func (r *PendingRemovalRepository) RecordFailure(userID, groupID int64, lastError string) (int, error) {
+	row := PendingRemoval{UserID: userID, GroupID: groupID}
+	err := Get().Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&PendingRemoval{}).
+			Where("user_id = ? AND group_id = ?", userID, groupID).
+			Updates(map[string]interface{}{
+				"attempts":   gorm.Expr("attempts + 1"),
+				"last_error": lastError,
+				"updated_at": time.Now(),
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Where("user_id = ? AND group_id = ?", userID, groupID).First(&row).Error
+	})
+	return row.Attempts, err
+}
+
+// Delete removes one pending removal.
+func (r *PendingRemovalRepository) Delete(userID, groupID int64) error {
+	return Get().Delete(&PendingRemoval{}, "user_id = ? AND group_id = ?", userID, groupID).Error
+}
+
+// DeleteForUser removes every pending removal for a user.
+func (r *PendingRemovalRepository) DeleteForUser(userID int64) error {
+	return Get().Delete(&PendingRemoval{}, "user_id = ?", userID).Error
+}
