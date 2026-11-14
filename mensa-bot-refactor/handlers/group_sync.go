@@ -8,6 +8,7 @@ import (
 
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Bombaclath97/mensa-telegram-bot/membership"
 	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -46,7 +47,9 @@ func SyncMemberGroups(ctx context.Context, userID int64) error {
 	assocRepo := database.NewGroupAssociationRepository()
 	userRepo := database.NewUserRepository()
 
-	groups, err := groupRepo.GetAll()
+	// Only the groups the bot is still in. A group it has left can never be probed, and one
+	// unprobeable group would leave this member unstamped forever.
+	groups, err := groupRepo.GetActive()
 	if err != nil {
 		return fmt.Errorf("loading known groups: %w", err)
 	}
@@ -104,10 +107,17 @@ func SyncMemberGroups(ctx context.Context, userID int64) error {
 					continue
 				}
 				group.GroupID = newID
+			} else if membership.IsBotGone(err) {
+				// The bot is no longer in this group (removed, or the chat was deleted) and we
+				// missed the my_chat_member update, e.g. it happened while the bot was down.
+				// That is a known answer, not an unknown one: record it, stop probing the
+				// group, and keep the sweep complete.
+				membership.RecordBotGone(ctx, group.GroupID, err)
+				continue
 			} else {
-				// Could be anything: the bot was removed from the group, the chat is gone, a
-				// transient API failure. We do not know whether the member is in there, so the
-				// sweep is not complete and must not be stamped.
+				// A transient API failure, or something we cannot classify. We do not know
+				// whether the member is in there, so the sweep is not complete and must not be
+				// stamped.
 				complete = false
 				logger.Warn("group sync: could not probe a group, the sweep will not be stamped",
 					map[string]interface{}{

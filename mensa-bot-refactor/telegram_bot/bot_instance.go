@@ -260,3 +260,12 @@ func DeclineJoinRequest(ctx context.Context, chatID, userID int64) (bool, error)
 		UserID: userID,
 	})
 }
+
+// BotID returns the bot's own Telegram user ID (0 if not initialized).
+func BotID() int64 {
+	b, err := Get()
+	if err != nil {
+		return 0
+	}
+	return b.ID()
+}

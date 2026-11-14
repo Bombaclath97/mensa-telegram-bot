@@ -237,11 +237,58 @@ func (r *GroupRepository) GetByID(groupID int64) (*Group, error) {
 	return &group, nil
 }
 
-// GetAll retrieves all groups the bot administers.
+// GetAll retrieves every group the bot has ever been in, including ones it has left.
 func (r *GroupRepository) GetAll() ([]Group, error) {
 	var groups []Group
-	result := Get().Find(&groups)
+	result := Get().Order("status, group_id").Find(&groups)
 	return groups, result.Error
+}
+
+// GetActive retrieves the groups the bot is still in. Anything that probes groups must use
+// this: a group the bot has left answers every probe with an error, and one unprobeable row
+// fails a member's whole group sync.
+func (r *GroupRepository) GetActive() ([]Group, error) {
+	var groups []Group
+	result := Get().Where("status <> ?", GroupStatusLeft).Find(&groups)
+	return groups, result.Error
+}
+
+// SetStatus records the bot's standing in a group, creating the row if needed. An empty
+// title keeps the stored one.
+func (r *GroupRepository) SetStatus(groupID int64, status, title string) error {
+	group := Group{GroupID: groupID, Status: status, Title: title, UpdatedAt: time.Now()}
+	columns := []string{"status", "updated_at"}
+	if title != "" {
+		columns = append(columns, "title")
+	}
+	return Get().Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "group_id"}},
+		DoUpdates: clause.AssignmentColumns(columns),
+	}).Create(&group).Error
+}
+
+// MarkLeft records that the bot is no longer in a group. Associations are kept.
+// Returns whether the row changed (false if it was already left or does not exist).
+func (r *GroupRepository) MarkLeft(groupID int64) (bool, error) {
+	res := Get().Model(&Group{}).
+		Where("group_id = ? AND status <> ?", groupID, GroupStatusLeft).
+		Updates(map[string]interface{}{"status": GroupStatusLeft, "updated_at": time.Now()})
+	return res.RowsAffected > 0, res.Error
+}
+
+// MemberCounts returns how many registered members are associated with each group.
+func (r *GroupRepository) MemberCounts() (map[int64]int, error) {
+	var rows []struct {
+		GroupID int64
+		N       int
+	}
+	err := Get().Model(&GroupAssociation{}).
+		Select("group_id, count(*) AS n").Group("group_id").Scan(&rows).Error
+	counts := make(map[int64]int, len(rows))
+	for _, row := range rows {
+		counts[row.GroupID] = row.N
+	}
+	return counts, err
 }
 
 // Create creates a new group row. Fails on a duplicate group ID; prefer Register.
@@ -333,10 +380,22 @@ func NewGroupAssociationRepository() *GroupAssociationRepository {
 	return &GroupAssociationRepository{}
 }
 
-// GetUserGroups retrieves all group associations for a user.
+// GetUserGroups retrieves all group associations for a user, including groups the bot has
+// left. The removal paths use this: a left group answers "gone" and is resolved cheaply.
 func (r *GroupAssociationRepository) GetUserGroups(userID int64) ([]GroupAssociation, error) {
 	var associations []GroupAssociation
 	result := Get().Where("user_id = ?", userID).Find(&associations)
+	return associations, result.Error
+}
+
+// GetUserActiveGroups is GetUserGroups without the groups the bot has left. For display: a
+// member should not be shown a group the bot no longer manages.
+func (r *GroupAssociationRepository) GetUserActiveGroups(userID int64) ([]GroupAssociation, error) {
+	var associations []GroupAssociation
+	result := Get().
+		Joins("JOIN groups ON groups.group_id = groups_associations.group_id").
+		Where("groups_associations.user_id = ? AND groups.status <> ?", userID, GroupStatusLeft).
+		Find(&associations)
 	return associations, result.Error
 }
 

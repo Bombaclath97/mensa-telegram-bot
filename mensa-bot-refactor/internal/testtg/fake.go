@@ -62,6 +62,7 @@ type Server struct {
 	mu       sync.Mutex
 	calls    []Call
 	statuses map[[2]int64]string // (chat, user) -> chat member status
+	titles   map[int64]string    // chat -> title, for getChat
 	failures map[key]*failure    // (method, chat, user) -> error; user 0 matches any user
 }
 
@@ -95,6 +96,7 @@ func (s *Server) Reset() {
 	defer s.mu.Unlock()
 	s.calls = nil
 	s.statuses = map[[2]int64]string{}
+	s.titles = map[int64]string{}
 	s.failures = map[key]*failure{}
 }
 
@@ -104,6 +106,13 @@ func (s *Server) SetStatus(chatID, userID int64, status string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.statuses[[2]int64{chatID, userID}] = status
+}
+
+// SetTitle sets what getChat reports as the chat's title.
+func (s *Server) SetTitle(chatID int64, title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.titles[chatID] = title
 }
 
 // Fail makes method fail for (chat, user). userID 0 matches any user in that chat.
@@ -174,6 +183,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	status := s.statuses[[2]int64{chatID, userID}]
+	title := s.titles[chatID]
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -204,6 +214,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			"chat":       map[string]any{"id": chatID, "type": "private"},
 			"text":       r.FormValue("text"),
 		}
+	case "getChat":
+		result = map[string]any{"id": chatID, "type": "supergroup", "title": title, "accent_color_id": 0, "max_reaction_count": 0}
+	case "getChatAdministrators":
+		result = []any{}
 	case "banChatMember", "unbanChatMember", "promoteChatMember", "deleteMessage", "answerCallbackQuery":
 		result = true
 	default:

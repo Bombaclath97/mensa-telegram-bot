@@ -84,6 +84,9 @@ func DrainPendingRemovals(ctx context.Context) DrainReport {
 
 		res := RemoveFromGroup(ctx, row.GroupID, row.UserID, opt)
 		fields["outcome"] = res.Outcome.String()
+		if res.Outcome == Gone {
+			RecordBotGone(ctx, row.GroupID, res.Err)
+		}
 
 		if res.Outcome.Resolved() {
 			if err := repo.Delete(row.UserID, row.GroupID); err != nil {

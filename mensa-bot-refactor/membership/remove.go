@@ -235,6 +235,23 @@ func IsGroupGone(err error) bool {
 	return false
 }
 
+// IsBotGone reports whether a Telegram error means the BOT can no longer see the group:
+// it was removed, or the chat no longer exists. Stricter than IsGroupGone, which also
+// counts errors about the user ("user not found") and the upgrade case; use this one before
+// recording that the bot has left a group.
+func IsBotGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"chat not found", "bot is not a member", "bot was kicked"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // DefaultDelay is the pause between Telegram calls, from CLEANUP_TELEGRAM_DELAY_MS
 // (default 100ms). Shared with the sweep so one knob governs the bot's kick rate.
 func DefaultDelay() time.Duration {
