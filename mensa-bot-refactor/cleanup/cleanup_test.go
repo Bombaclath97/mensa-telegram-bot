@@ -13,6 +13,7 @@ import (
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/internal/testdb"
 	"github.com/Bombaclath97/mensa-telegram-bot/internal/testtg"
+	"github.com/Bombaclath97/mensa-telegram-bot/membership"
 )
 
 // fakeTG is the fake Telegram Bot API every test in this package talks to. Tests that touch
@@ -720,14 +721,14 @@ func TestDTOSelfCheckPasses(t *testing.T) {
 func TestIsGroupGoneHelper(t *testing.T) {
 	gone := []string{"chat not found", "Bot is not a member of the group chat", "bot was kicked from the group"}
 	for _, msg := range gone {
-		if !cleanupIsGroupGone(errStr(msg)) {
+		if !membership.IsGroupGone(errStr(msg)) {
 			t.Errorf("%q should be classified as group-gone", msg)
 		}
 	}
-	if cleanupIsGroupGone(errStr("temporary network blip")) {
+	if membership.IsGroupGone(errStr("temporary network blip")) {
 		t.Error("a transient error must NOT be classified as group-gone")
 	}
-	if cleanupIsGroupGone(nil) {
+	if membership.IsGroupGone(nil) {
 		t.Error("nil must not be group-gone")
 	}
 }

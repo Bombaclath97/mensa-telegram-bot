@@ -260,12 +260,13 @@ func ProfileCardCallbackHandler(ctx context.Context, b *bot.Bot, update *models.
 		repaintCard(ctx, chatID, messageID, user, lang, viewDeleteConfirm, "")
 
 	case data == CallbackCardConfirm:
-		if err := DeleteMemberEverywhere(ctx, userID, lang); err != nil {
+		res, err := DeleteMemberEverywhere(ctx, userID, lang)
+		if err != nil {
 			tb.AnswerCallback(ctx, q.ID, tolgee.T("telegrambot.general.error", lang))
 			return
 		}
 		tb.DeleteMessage(ctx, chatID, messageID)
-		tb.Send(ctx, chatID, tolgee.T("telegrambot.deletecommand.deleted", lang))
+		tb.Send(ctx, chatID, deletedMessage(res, lang))
 
 	case data == CallbackCardBack:
 		repaintCard(ctx, chatID, messageID, user, lang, viewProfile, "")

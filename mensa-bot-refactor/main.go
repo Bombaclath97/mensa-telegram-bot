@@ -13,6 +13,7 @@ import (
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/handlers"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Bombaclath97/mensa-telegram-bot/membership"
 	"github.com/Bombaclath97/mensa-telegram-bot/model"
 	"github.com/Bombaclath97/mensa-telegram-bot/server"
 	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
@@ -116,6 +117,10 @@ func main() {
 	// Membership-expiry cleanup sweep. Ticker-driven (CLEANUP_INTERVAL_HOURS), NOT
 	// exposed over HTTP. Start blocks until ctx is cancelled, hence the goroutine.
 	go cleanup.Start(ctx)
+
+	// Retries group removals that /elimina could not finish (Telegram errors, rate limits).
+	// The member's profile is already deleted; this only finishes kicking them.
+	go membership.StartPendingRemovals(ctx)
 
 	// One-shot repair for members left at groups_synced_at = NULL by a group row that could
 	// not be probed (see handlers.BackfillUnsyncedMembers). Opt-in, because it is a backlog
