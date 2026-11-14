@@ -56,6 +56,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Bombaclath97/mensa-telegram-bot/alert"
 	"github.com/Bombaclath97/mensa-telegram-bot/api"
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
@@ -109,7 +110,12 @@ type Report struct {
 	OwnersWarned    int // expired group owners we cannot kick
 	Failed          int // members whose group cleanup failed; deletion deferred to next sweep
 	BreakerTripped  bool
+	BreakerReason   string
 	Duration        time.Duration
+
+	// ExpiredMembers are the members conclusively reported expired, in the order checked.
+	// Filled even when the breaker trips, so a preview can show who it would have removed.
+	ExpiredMembers []database.User
 }
 
 // config is resolved from the environment on every sweep, so an operator can retune the
@@ -190,9 +196,7 @@ func Start(ctx context.Context) {
 
 	if runOnStart {
 		logger.Warn("cleanup: CLEANUP_RUN_ON_START is set — sweeping now", nil)
-		if _, err := RunOnce(ctx); err != nil {
-			logger.Error("cleanup: sweep did not complete", map[string]interface{}{"error": err.Error()})
-		}
+		scheduledSweep(ctx)
 	}
 
 	ticker := time.NewTicker(interval)
@@ -204,11 +208,69 @@ func Start(ctx context.Context) {
 			logger.Info("cleanup: sweep scheduler stopped", nil)
 			return
 		case <-ticker.C:
-			if _, err := RunOnce(ctx); err != nil {
-				logger.Error("cleanup: sweep did not complete", map[string]interface{}{"error": err.Error()})
-			}
+			scheduledSweep(ctx)
 		}
 	}
+}
+
+// scheduledSweep runs one sweep and tells the admins about anything that needs a human.
+func scheduledSweep(ctx context.Context) {
+	report, err := RunOnce(ctx)
+	if err != nil {
+		logger.Error("cleanup: sweep did not complete", map[string]interface{}{"error": err.Error()})
+	}
+	if msg, ok := SweepAlert(report, err); ok {
+		alert.Admins(ctx, msg)
+	}
+}
+
+// SweepAlert decides whether a finished sweep is worth an admin's attention, and words the
+// alert (HTML). A quiet sweep (nothing expired, API healthy) sends nothing.
+func SweepAlert(r Report, err error) (string, bool) {
+	var b strings.Builder
+
+	switch {
+	case errors.Is(err, ErrSweepInProgress):
+		return "", false
+
+	case errors.Is(err, ErrCircuitBreaker):
+		fmt.Fprintf(&b, "🚨 <b>Cleanup sweep aborted by the circuit breaker</b>\n\n")
+		fmt.Fprintf(&b, "%d of %d checked members came back expired: %s.\n", r.Expired, r.Checked, tolgee.EscapeHTML(r.BreakerReason))
+		fmt.Fprintf(&b, "<b>Nobody was removed.</b> This is usually an API problem or a renewal wave, not a real mass expiry.\n\n")
+		fmt.Fprintf(&b, "Run /sweep_preview to see who is affected.")
+		return b.String(), true
+
+	case err != nil:
+		fmt.Fprintf(&b, "🚨 <b>Cleanup sweep failed</b>\n\n<code>%s</code>\n\nNobody was removed.", tolgee.EscapeHTML(err.Error()))
+		return b.String(), true
+	}
+
+	// The API answered, but too often without a usable answer: those members were treated
+	// as active, so expired members may be slipping through.
+	apiUnhealthy := r.Checked > 0 && r.Inconclusive*2 >= r.Checked
+
+	if r.Expired == 0 && !apiUnhealthy {
+		return "", false
+	}
+
+	if r.DryRun {
+		fmt.Fprintf(&b, "🔍 <b>Dry-run sweep</b>: %d member(s) would be removed. Nothing was changed.\n", r.Expired)
+		if r.Expired > 0 {
+			fmt.Fprintf(&b, "Run /sweep_preview for the list.\n")
+		}
+	} else {
+		fmt.Fprintf(&b, "🧹 <b>Cleanup sweep</b>: %d expired, %d removed, %d group kick(s).\n", r.Expired, r.Deleted, r.KickedFromGroup)
+		if r.Failed > 0 {
+			fmt.Fprintf(&b, "⚠️ %d member(s) could not be fully removed and will be retried next sweep.\n", r.Failed)
+		}
+		if r.OwnersWarned > 0 {
+			fmt.Fprintf(&b, "⚠️ %d expired member(s) own a group and cannot be kicked: a human has to sort that out.\n", r.OwnersWarned)
+		}
+	}
+	if apiUnhealthy {
+		fmt.Fprintf(&b, "⚠️ <b>Mensa API looks unhealthy</b>: %d of %d checks were inconclusive and counted as active.\n", r.Inconclusive, r.Checked)
+	}
+	return strings.TrimRight(b.String(), "\n"), true
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +280,22 @@ func Start(ctx context.Context) {
 // RunOnce performs a single sweep. It is safe to call concurrently with itself: a second
 // caller returns ErrSweepInProgress instead of running a parallel (double-kicking) pass.
 func RunOnce(ctx context.Context) (Report, error) {
+	return runOnce(ctx, false)
+}
+
+// Preview runs a full sweep in DRY RUN, whatever CLEANUP_DRY_RUN says, and returns its
+// report. It calls the Mensa API for every member and reads each expired member's role in
+// their groups, but changes nothing. Behind the admin-only /sweep_preview command.
+func Preview(ctx context.Context) (Report, error) {
+	return runOnce(ctx, true)
+}
+
+// Armed reports whether the scheduled sweep would act for real (CLEANUP_DRY_RUN=false).
+func Armed() bool {
+	return !cleanupLoadConfig().dryRun
+}
+
+func runOnce(ctx context.Context, forceDryRun bool) (Report, error) {
 	if !running.CompareAndSwap(false, true) {
 		logger.Warn("cleanup: a sweep is already running, skipping this trigger", nil)
 		return Report{}, ErrSweepInProgress
@@ -226,6 +304,9 @@ func RunOnce(ctx context.Context) (Report, error) {
 
 	start := time.Now()
 	cfg := cleanupLoadConfig()
+	if forceDryRun {
+		cfg.dryRun = true
+	}
 	report := Report{DryRun: cfg.dryRun}
 
 	// RAIL 0 — never trust the DTO. If the json tags on CheckValidityResponse ever regress
@@ -273,6 +354,7 @@ func RunOnce(ctx context.Context) (Report, error) {
 	report.Skipped = stats.skipped
 	report.Inconclusive = stats.inconclusive
 	report.Expired = len(expired)
+	report.ExpiredMembers = expired
 
 	logger.Info("cleanup: membership check complete", map[string]interface{}{
 		"total":        report.TotalMembers,
@@ -293,6 +375,7 @@ func RunOnce(ctx context.Context) (Report, error) {
 	// PHASE 2 — CIRCUIT BREAKER. Refuse to act on an implausibly large expired set.
 	if tripped, reason := cleanupBreakerTripped(len(expired), report.Checked, cfg); tripped {
 		report.BreakerTripped = true
+		report.BreakerReason = reason
 		report.Duration = time.Since(start)
 		logger.Error("cleanup: CIRCUIT BREAKER TRIPPED — the sweep wanted to remove an implausible number of members. NOBODY was kicked or deleted. This is almost certainly a bug or an API misbehaviour, not a real mass expiry. Investigate before re-arming.", map[string]interface{}{
 			"reason":             reason,

@@ -112,8 +112,18 @@ Published to the Telegram command menu (per language) via `SetMyCommands`:
 | `/lang`    | Choose your language (it / en / es / de).                           |
 | `/cancel`  | Abort an in-progress wizard.                                        |
 
-`/manual_add` exists but is **admin-only** and deliberately not advertised in the
-menu. Admins are seeded from `ADMIN_TELEGRAM_IDS`.
+Three more commands are **admin-only** and deliberately not advertised in the menu. A
+non-admin gets no reply at all. Admins are seeded from `ADMIN_TELEGRAM_IDS`.
+
+| Command          | What it does                                                          |
+| ---------------- | --------------------------------------------------------------------- |
+| `/manual_add`    | Register an international member without an `@mensa.it` address.     |
+| `/sweep_preview` | Run a dry-run cleanup sweep now and report who would be removed.      |
+| `/pending`       | List group removals `/elimina` could not finish yet.                  |
+
+The same admins receive Telegram alerts when something needs a human: a tripped circuit
+breaker, a failed sweep, an unhealthy Mensa API, or a removal the bot gave up on. See
+[`DEPLOY.md`](DEPLOY.md#admin-alerts).
 
 ## Configuration
 
