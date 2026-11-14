@@ -12,7 +12,12 @@ import (
 
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/internal/testdb"
+	"github.com/Bombaclath97/mensa-telegram-bot/internal/testtg"
 )
+
+// fakeTG is the fake Telegram Bot API every test in this package talks to. Tests that touch
+// group associations assert against it; the rest never reach it.
+var fakeTG *testtg.Server
 
 // TestMain initialises a real, throwaway PostgreSQL container (the sweep loads `users` and
 // deletes rows, and relies on the association cascade). Skips when Docker is unavailable.
@@ -31,8 +36,15 @@ func TestMain(m *testing.M) {
 		panic("database.Init failed: " + err.Error())
 	}
 
+	fakeTG, err = testtg.Install()
+	if err != nil {
+		terminate()
+		panic("testtg.Install failed: " + err.Error())
+	}
+
 	code := m.Run()
 
+	fakeTG.Close()
 	_ = database.Close()
 	terminate()
 	os.Exit(code)

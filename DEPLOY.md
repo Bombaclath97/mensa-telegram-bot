@@ -165,9 +165,21 @@ docker exec $(docker ps -qf name=mensa_postgres) pg_dump -U mensa mensa | gzip >
 The expiry sweep ships dry. It is destructive — it kicks members out of groups and deletes
 rows. Do not flip it until:
 
-- the destructive-path tests exist (`cleanupHandleGroup`, `DeleteMemberEverywhere`);
-- `CLEANUP_MAX_DELETIONS` is set low (single digits) for the first live sweep;
-- you have read one dry-run's audit log and recognise the names in it.
+- ✅ the destructive-path tests exist: `cleanup/cleanup_destructive_test.go` and
+  `handlers/delete_member_test.go`, both against the fake Bot API in `internal/testtg`;
+- ✅ `CLEANUP_MAX_DELETIONS` is low for the first live sweep: `docker-stack.yml` defaults it
+  to `3`. Check Portainer's stack environment does not override it with something larger;
+- you have read one dry-run's audit log and recognise the names in it. Look for the lines
+  `cleanup: member has an EXPIRED membership` and `[DRY RUN] would kick`:
+
+  ```sh
+  docker service logs mensa_mensa-bot 2>&1 | grep -E 'EXPIRED membership|DRY RUN|CIRCUIT BREAKER'
+  ```
+
+  If that dry run shows more than `CLEANUP_MAX_DELETIONS` expired members, the live sweep will
+  trip the breaker and do nothing. That is correct behaviour, not a bug; find out why first.
+
+Then set `CLEANUP_DRY_RUN=false` in the stack environment and redeploy.
 
 See `CUTOVER.md` for the group-takeover process, which is a separate and even more destructive
 thing.
