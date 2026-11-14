@@ -64,7 +64,9 @@ services:
       # The expiry sweep SHIPS DRY. Read DEPLOY.md before flipping this.
       CLEANUP_DRY_RUN: ${CLEANUP_DRY_RUN:-true}
       CLEANUP_INTERVAL_HOURS: ${CLEANUP_INTERVAL_HOURS:-24}
-      CLEANUP_MAX_DELETIONS: ${CLEANUP_MAX_DELETIONS:-10}
+      # Deliberately low for the first live sweeps: a larger expired set aborts and touches
+      # nobody. Raise it only after a few real sweeps have behaved.
+      CLEANUP_MAX_DELETIONS: ${CLEANUP_MAX_DELETIONS:-3}
       CLEANUP_MAX_FRACTION: ${CLEANUP_MAX_FRACTION:-0.25}
 
     secrets:

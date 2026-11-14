@@ -9,6 +9,7 @@ package testdb
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -36,7 +37,14 @@ const (
 //
 // Returns an error rather than failing the test itself so TestMain can decide: a missing
 // Docker daemon should skip, not fail the build.
+//
+// TEST_DATABASE_URL, when set, is used instead of a container (for machines without Docker).
+// It must point at a THROWAWAY database: the suites delete every row in it.
 func Start(ctx context.Context) (dsn string, terminate func(), err error) {
+	if external := os.Getenv("TEST_DATABASE_URL"); external != "" {
+		return external, func() {}, nil
+	}
+
 	container, err := postgres.Run(ctx, image,
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
