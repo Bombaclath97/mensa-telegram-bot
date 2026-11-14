@@ -2,12 +2,14 @@ package membership
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/Bombaclath97/mensa-telegram-bot/alert"
 	"github.com/Bombaclath97/mensa-telegram-bot/database"
 	"github.com/Bombaclath97/mensa-telegram-bot/logger"
 	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
@@ -29,6 +31,9 @@ type DrainReport struct {
 	Reregistered int // the member registered again, so the removal was dropped
 	Failed       int // still failing: attempts bumped
 	GaveUp       int // reached MaxPendingAttempts on this pass
+
+	// GaveUpRows are the removals abandoned on this pass, for the admin alert.
+	GaveUpRows []database.PendingRemoval
 }
 
 var draining atomic.Bool
@@ -103,6 +108,9 @@ func DrainPendingRemovals(ctx context.Context) DrainReport {
 		}
 		if attempts >= MaxPendingAttempts {
 			report.GaveUp++
+			row.Attempts = attempts
+			row.LastError = errText
+			report.GaveUpRows = append(report.GaveUpRows, row)
 			logger.Error("membership: GIVING UP on a pending removal after repeated failures. The member deleted their profile but is still in this group; an admin has to remove them by hand.", fields)
 			continue
 		}
@@ -138,7 +146,7 @@ func StartPendingRemovals(ctx context.Context) {
 	interval := PendingInterval()
 	logger.Info("membership: pending-removal retrier started", map[string]interface{}{"interval": interval.String()})
 
-	DrainPendingRemovals(ctx)
+	drainAndAlert(ctx)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -147,7 +155,32 @@ func StartPendingRemovals(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			DrainPendingRemovals(ctx)
+			drainAndAlert(ctx)
 		}
 	}
+}
+
+func drainAndAlert(ctx context.Context) {
+	if msg, ok := PendingAlert(DrainPendingRemovals(ctx)); ok {
+		alert.Admins(ctx, msg)
+	}
+}
+
+// PendingAlert words the admin alert for removals abandoned on a pass (HTML). Nothing
+// abandoned, no alert.
+func PendingAlert(r DrainReport) (string, bool) {
+	if len(r.GaveUpRows) == 0 {
+		return "", false
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "🚨 <b>Gave up removing %d member(s) from a group</b>\n\n", len(r.GaveUpRows))
+	b.WriteString("They deleted their profile with /elimina, but after repeated failures they are still in the group. Remove them by hand:\n")
+	for _, row := range r.GaveUpRows {
+		fmt.Fprintf(&b, "\n• user <code>%d</code> in group <code>%d</code> (%d attempts)", row.UserID, row.GroupID, row.Attempts)
+		if row.LastError != "" {
+			fmt.Fprintf(&b, ": <i>%s</i>", tolgee.EscapeHTML(row.LastError))
+		}
+	}
+	b.WriteString("\n\n/pending lists every pending removal.")
+	return b.String(), true
 }

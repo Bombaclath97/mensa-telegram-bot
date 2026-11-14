@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -268,4 +269,17 @@ func IsSeededBotAdmin(telegramID int64) bool {
 	defer botAdminsMu.RUnlock()
 	_, ok := botAdminsSet[telegramID]
 	return ok
+}
+
+// SeededBotAdmins returns the IDs passed to SeedBotAdmins (ADMIN_TELEGRAM_IDS), sorted.
+// They are who operational alerts are sent to.
+func SeededBotAdmins() []int64 {
+	botAdminsMu.RLock()
+	defer botAdminsMu.RUnlock()
+	ids := make([]int64, 0, len(botAdminsSet))
+	for id := range botAdminsSet {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
 }

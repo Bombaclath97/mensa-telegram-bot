@@ -2,6 +2,7 @@ package membership
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,8 +95,8 @@ func TestDrainGivesUpAtMaxAttempts(t *testing.T) {
 	fakeTG.Fail("banChatMember", chat, 810004, testtg.ErrTransient)
 
 	r := DrainPendingRemovals(context.Background())
-	if r.GaveUp != 1 {
-		t.Fatalf("want GaveUp=1, got %+v", r)
+	if r.GaveUp != 1 || len(r.GaveUpRows) != 1 || r.GaveUpRows[0].Attempts != MaxPendingAttempts {
+		t.Fatalf("want one abandoned row at max attempts, got %+v", r)
 	}
 
 	// The row stays as a record for an admin, but is no longer retried.
@@ -132,5 +133,22 @@ func TestDrainDoesNotKickAReregisteredMember(t *testing.T) {
 	}
 	if r.Reregistered != 1 {
 		t.Fatalf("unexpected report: %+v", r)
+	}
+}
+
+func TestPendingAlert(t *testing.T) {
+	if _, send := PendingAlert(DrainReport{Resolved: 3}); send {
+		t.Fatal("nothing abandoned, nothing to say")
+	}
+	msg, send := PendingAlert(DrainReport{GaveUp: 1, GaveUpRows: []database.PendingRemoval{
+		{UserID: 42, GroupID: -100, Attempts: 5, LastError: "Bad <thing>"},
+	}})
+	if !send {
+		t.Fatal("an abandoned removal must alert")
+	}
+	for _, want := range []string{"Gave up", "<code>42</code>", "<code>-100</code>", "Bad &lt;thing&gt;", "/pending"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("alert %q is missing %q", msg, want)
+		}
 	}
 }
