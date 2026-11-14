@@ -146,7 +146,7 @@ func main() {
 func seedBotAdmins() {
 	raw := os.Getenv("ADMIN_TELEGRAM_IDS")
 	if strings.TrimSpace(raw) == "" {
-		logger.Warn("ADMIN_TELEGRAM_IDS is not set: /manual_add will be unavailable to everyone")
+		logger.Warn("ADMIN_TELEGRAM_IDS is not set: admin commands are unavailable and nobody will receive alerts")
 		return
 	}
 
@@ -191,6 +191,8 @@ func registerHandlers(b *bot.Bot) {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "cancel", bot.MatchTypeCommand, handlers.CancelCommandHandler)
 	// Admin-only, deliberately NOT published via SetMyCommands.
 	b.RegisterHandler(bot.HandlerTypeMessageText, "manual_add", bot.MatchTypeCommand, handlers.ManualAddCommandHandler)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "sweep_preview", bot.MatchTypeCommand, handlers.SweepPreviewCommandHandler)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "pending", bot.MatchTypeCommand, handlers.PendingCommandHandler)
 
 	// Callbacks
 	// NOTE: "pcard:" must be registered BEFORE "profile:" only if the prefixes overlapped —
