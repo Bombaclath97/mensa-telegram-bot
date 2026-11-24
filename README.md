@@ -1,196 +1,212 @@
 # Mensa Bot Telegram
 
-A Telegram bot that gates the Mensa Italia Telegram groups. It lets a Mensa
-member prove their membership once, then auto-approves their join requests to
-every group the bot administers, keeps a member's profile, and periodically
-removes members whose membership has lapsed.
+Un bot Telegram che fa da portinaio ai gruppi Telegram di Mensa Italia. Un socio
+dimostra una sola volta di essere iscritto; da quel momento il bot approva in
+automatico le sue richieste di ingresso in tutti i gruppi che amministra, ne
+conserva il profilo e rimuove periodicamente chi non è più socio.
 
-The bot supports Italian (default), English, Spanish and German; user-facing
-strings come from [Tolgee](https://tolgee.io), with a CDN and on-disk cache
-fallback so a translation outage never takes the bot down.
+Il bot parla italiano (predefinito), inglese, spagnolo e tedesco. I testi rivolti
+agli utenti arrivano da [Tolgee](https://tolgee.io), con CDN e cache su disco come
+ripiego, così un disservizio delle traduzioni non manda mai giù il bot.
 
-## Architecture
+Vuoi contribuire? Leggi [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-This is a **single Go service** (module `github.com/Bombaclath97/mensa-telegram-bot`,
-one binary). It replaces the former three-part deployment (`mensa-bot` +
-`mensa-telegram-crud` + `mensa-shared-models`), all of which have been retired.
+## Architettura
 
-The one process runs two things side by side under a shared, signal-cancelled
-context (SIGINT/SIGTERM → graceful shutdown):
+È un **unico servizio Go** (modulo `github.com/Bombaclath97/mensa-telegram-bot`,
+un solo binario). Sostituisce il vecchio deployment in tre parti (`mensa-bot` +
+`mensa-telegram-crud` + `mensa-shared-models`), ormai dismesso.
 
-- **Telegram long-polling** — commands, callbacks, chat-join-request gating and
-  group membership events.
-- **An inbound HTTP server** (`HTTP_ADDR`, default `:8080`) exposing:
-  - `GET /health` — liveness probe (used by the Docker/compose healthcheck).
-  - `POST /callme_api/{token}` — the callback the official Mensa app calls to
-    approve or reject an identity-verification request.
+Il processo esegue due cose in parallelo, sotto un contesto condiviso che viene
+annullato dai segnali (SIGINT/SIGTERM → spegnimento ordinato):
 
-Persistence is **PostgreSQL accessed directly via GORM** (`gorm.io/driver/postgres`,
-pure Go). There is no separate CRUD service and no HTTP/DB layer between the bot
-and its data. The schema is auto-migrated on boot and foreign keys are enforced
-natively.
+- **Long-polling di Telegram**: comandi, callback, controllo delle richieste di
+  ingresso e eventi di appartenenza ai gruppi.
+- **Un server HTTP in ingresso** (`HTTP_ADDR`, predefinito `:8080`) che espone:
+  - `GET /health`: liveness probe (usata dall'healthcheck di Docker/compose).
+  - `POST /callme_api/{token}`: la callback che l'app ufficiale Mensa chiama per
+    approvare o rifiutare una richiesta di verifica dell'identità.
 
-The bot itself is **stateless** — it keeps nothing on disk. That is deliberate:
-it was SQLite, which pinned the process to one machine's filesystem and made
-Docker Swarm actively dangerous (a named volume is local to its node and does not
-follow a rescheduled task, so the bot would come up against an empty database).
-Postgres also drops the cgo dependency, which is why the image is now a 27 MB
-distroless static binary instead of a Debian base with a C toolchain behind it.
+La persistenza è **PostgreSQL, usato direttamente tramite GORM**
+(`gorm.io/driver/postgres`, Go puro). Non c'è un servizio CRUD separato né uno
+strato HTTP/DB tra il bot e i suoi dati. Lo schema viene migrato in automatico
+all'avvio e le foreign key sono applicate dal database.
 
-Note this does **not** make the bot scalable: `replicas` must be exactly 1.
-Telegram permits one `getUpdates` poller per token, and both the draft store and
-the cleanup ticker are in-process. See [`DEPLOY.md`](DEPLOY.md).
+Il bot è **stateless**: non tiene nulla su disco, e di proposito. Prima usava
+SQLite, che legava il processo al filesystem di una sola macchina e rendeva Docker
+Swarm pericoloso (un volume con nome è locale al suo nodo e non segue un task
+rischedulato altrove, quindi il bot sarebbe ripartito con un database vuoto).
+Postgres elimina anche la dipendenza da cgo: per questo l'immagine ora è un binario
+statico distroless da 27 MB invece di una base Debian con dietro un toolchain C.
 
-TLS is **not** handled by the service: it serves plain HTTP and is meant to sit
-behind a reverse proxy (nginx, Caddy, Traefik, …) that terminates TLS and
-forwards both the webhook path and the health check to `HTTP_ADDR`.
+Attenzione: questo **non** rende il bot scalabile. `replicas` deve essere
+esattamente 1. Telegram consente un solo poller `getUpdates` per token, e sia
+l'archivio delle bozze sia il timer della pulizia vivono nel processo. Vedi
+[`DEPLOY.md`](DEPLOY.md).
+
+Il servizio **non** gestisce il TLS: serve HTTP in chiaro e va messo dietro un
+reverse proxy (nginx, Caddy, Traefik, …) che termina il TLS e inoltra a
+`HTTP_ADDR` sia il percorso della webhook sia l'health check.
 
 ```
                  ┌────────────────────────────────────┐
-   Telegram  ◄──►│  mensa-bot (single Go binary)      │
-  (long poll)    │    • bot handlers  ─┐              │       ┌────────────┐
-                 │    • http server   ─┼─► GORM ──────┼──────►│  Postgres  │
- reverse proxy   │    • cleanup ticker ┘              │       │  (volume)  │
+   Telegram  ◄──►│  mensa-bot (unico binario Go)      │
+  (long poll)    │    • handler bot   ─┐              │       ┌────────────┐
+                 │    • server http   ─┼─► GORM ──────┼──────►│  Postgres  │
+ reverse proxy   │    • timer pulizia ─┘              │       │  (volume)  │
   ──HTTP──►:8080 │                                    │       └────────────┘
- (/callme_api,   │    outbound ─► Mensa API, Tolgee   │        the only state,
-  /health)       └────────────────────────────────────┘        pinned to a node
-                          stateless: no volume
+ (/callme_api,   │    uscita ─► API Mensa, Tolgee     │      l'unico stato,
+  /health)       └────────────────────────────────────┘      legato a un nodo
+                          stateless: nessun volume
 ```
 
-## Registration & verification flow
+## Registrazione e verifica
 
-Membership is proven by a round-trip through the official Mensa app; the bot
-never trusts a self-declared email/number on its own.
+L'iscrizione si dimostra con un giro attraverso l'app ufficiale Mensa: il bot non
+si fida mai, da sola, di un'email o di un numero di tessera dichiarati dall'utente.
 
-1. A user opens a private chat and runs `/profilo` (or `/start`) to begin the
-   registration wizard.
-2. The wizard collects the user's **@mensa.it email** and **membership number**.
-3. On submit the bot calls the Mensa API (`POST {API_ENDPOINT}/request`) with the
-   email, membership number and a one-time callback URL
-   (`{CALLME_BASE_URL}/{token}`). A 200 means the pair is a real member and a
-   push notification was sent to that member's Mensa app. The draft is locked in
-   an `AWAITING_APPROVAL` state (TTL `APPROVAL_TIMEOUT_MINUTES`).
-4. The member opens the Mensa app and approves (or rejects). The app calls back
-   `POST /callme_api/{token}` with `{"accepted": <bool>}`. The token must match
-   the locked draft on **both** branches, so no third party can approve or abort
-   someone else's registration.
-5. On approval the bot collects the member's real first and last name, writes the
-   verified user row, and the account is now a recognized member.
-6. From then on, any **join request** to a group the bot administers is
-   auto-approved for that member and the group association is recorded. If an
-   unregistered user requests to join, the bot DMs them to register first and
-   buffers the request; **registration itself drains the buffer**, so those
-   requests are approved the moment they finish. `/approva` re-runs the drain by
-   hand if it is ever needed.
-7. Registration also probes every known group for that member and records the
-   groups they were *already* in. Nothing else can discover those: a member who
-   was in the group before the bot arrived never issues a join request, and the
-   Bot API cannot list a group's members. Until this ran, such members were
-   invisible to `/elimina`, to `/profilo`'s group list, and to the cleanup
-   sweep — which would delete their row while kicking them from nothing.
+1. L'utente apre una chat privata e lancia `/profilo` (o `/start`) per avviare la
+   procedura guidata di registrazione.
+2. La procedura chiede l'**email @mensa.it** e il **numero di tessera**.
+3. All'invio il bot chiama l'API Mensa (`POST {API_ENDPOINT}/request`) con email,
+   numero di tessera e un URL di callback monouso (`{CALLME_BASE_URL}/{token}`).
+   Una risposta 200 significa che la coppia corrisponde a un socio reale e che è
+   partita una notifica push verso la sua app Mensa. La bozza viene bloccata nello
+   stato `AWAITING_APPROVAL` (scadenza `APPROVAL_TIMEOUT_MINUTES`).
+4. Il socio apre l'app Mensa e approva (o rifiuta). L'app richiama
+   `POST /callme_api/{token}` con `{"accepted": <bool>}`. Il token deve
+   corrispondere alla bozza bloccata in **entrambi** i casi, così nessun terzo può
+   approvare o annullare la registrazione di qualcun altro.
+5. Dopo l'approvazione il bot chiede nome e cognome reali, scrive la riga
+   dell'utente verificato e da quel momento l'account è un socio riconosciuto.
+6. Da lì in poi, ogni **richiesta di ingresso** a un gruppo amministrato dal bot
+   viene approvata in automatico per quel socio, e l'associazione al gruppo viene
+   registrata. Se a chiedere l'ingresso è un utente non registrato, il bot gli
+   scrive in privato di registrarsi prima e mette la richiesta in attesa; **la
+   registrazione stessa svuota la coda**, quindi quelle richieste vengono
+   approvate appena l'utente finisce. `/approva` rilancia lo svuotamento a mano,
+   se mai servisse.
+7. La registrazione controlla anche tutti i gruppi noti e registra quelli in cui
+   il socio era *già* presente. Nient'altro potrebbe scoprirli: chi era nel gruppo
+   prima dell'arrivo del bot non invia mai una richiesta di ingresso, e la Bot API
+   non permette di elencare i membri di un gruppo. Senza questo passaggio quei soci
+   sarebbero invisibili a `/elimina`, all'elenco gruppi di `/profilo` e alla
+   pulizia periodica, che cancellerebbe la loro riga senza espellerli da nulla.
 
-International Mensa members without an `@mensa.it` address are added by a bot
-admin via the hidden `/manual_add` command, which bypasses the email/app check.
+I soci di Mensa internazionale senza un indirizzo `@mensa.it` vengono aggiunti da
+un admin del bot con il comando nascosto `/manual_add`, che salta il controllo via
+email e app.
 
-A ticker-driven **cleanup sweep** (interval `CLEANUP_INTERVAL_HOURS`) checks each
-member against `POST {API_ENDPOINT}/valid`; expired members are warned, demoted /
-kicked from groups and deleted. The sweep ships **dry-run by default**
-(`CLEANUP_DRY_RUN=true`) and has circuit breakers (`CLEANUP_MAX_DELETIONS`,
-`CLEANUP_MAX_FRACTION`) so a misconfiguration cannot mass-remove the membership.
+Una **pulizia periodica** guidata da un timer (intervallo `CLEANUP_INTERVAL_HOURS`)
+verifica ogni socio contro `POST {API_ENDPOINT}/valid`. I soci scaduti vengono
+avvisati, declassati o espulsi dai gruppi e cancellati. Di serie la pulizia gira
+in **dry-run** (`CLEANUP_DRY_RUN=true`) e ha dei circuit breaker
+(`CLEANUP_MAX_DELETIONS`, `CLEANUP_MAX_FRACTION`), così una configurazione sbagliata
+non può rimuovere in massa i soci.
 
-## Commands
+## Comandi
 
-Published to the Telegram command menu (per language) via `SetMyCommands`:
+Pubblicati nel menu comandi di Telegram (per lingua) tramite `SetMyCommands`:
 
-| Command    | What it does                                                        |
+| Comando    | Cosa fa                                                             |
 | ---------- | ------------------------------------------------------------------- |
-| `/start`   | Greeting; tells you whether you are registered.                     |
-| `/profilo` | Show your profile / groups, or start the registration wizard.       |
-| `/approva` | Approve your buffered join requests once you are registered.        |
-| `/app`     | Send the Mensa Italia app download links.                           |
-| `/elimina` | Delete your profile and remove you from every Mensa group.          |
-| `/lang`    | Choose your language (it / en / es / de).                           |
-| `/cancel`  | Abort an in-progress wizard.                                        |
+| `/start`   | Saluta e ti dice se sei registrato.                                 |
+| `/profilo` | Mostra profilo e gruppi, oppure avvia la registrazione.             |
+| `/approva` | Approva le richieste di ingresso in attesa, una volta registrato.   |
+| `/app`     | Invia i link per scaricare l'app Mensa Italia.                      |
+| `/elimina` | Cancella il tuo profilo e ti rimuove da tutti i gruppi Mensa.       |
+| `/lang`    | Scegli la lingua (it / en / es / de).                               |
+| `/cancel`  | Interrompe una procedura guidata in corso.                          |
 
-Four more commands are **admin-only** and deliberately not advertised in the menu. A
-non-admin gets no reply at all. Admins are seeded from `ADMIN_TELEGRAM_IDS`.
+Altri quattro comandi sono **solo per admin** e di proposito non compaiono nel menu.
+Chi non è admin non riceve alcuna risposta. Gli admin vengono inizializzati da
+`ADMIN_TELEGRAM_IDS`.
 
-| Command          | What it does                                                          |
-| ---------------- | --------------------------------------------------------------------- |
-| `/manual_add`    | Register an international member without an `@mensa.it` address.     |
-| `/sweep_preview` | Run a dry-run cleanup sweep now and report who would be removed.      |
-| `/pending`       | List group removals `/elimina` could not finish yet.                  |
-| `/groups`        | List every group, whether the bot is admin there, and its members.    |
+| Comando          | Cosa fa                                                                  |
+| ---------------- | ------------------------------------------------------------------------ |
+| `/manual_add`    | Registra un socio internazionale senza indirizzo `@mensa.it`.            |
+| `/sweep_preview` | Esegue subito una pulizia in dry-run e riporta chi verrebbe rimosso.     |
+| `/pending`       | Elenca le rimozioni dai gruppi che `/elimina` non ha ancora completato.  |
+| `/groups`        | Elenca tutti i gruppi, se il bot vi è admin e i rispettivi membri.       |
 
-The same admins receive Telegram alerts when something needs a human: a tripped circuit
-breaker, a failed sweep, an unhealthy Mensa API, a removal the bot gave up on, or the bot
-being removed from a group or losing its admin rights there. See
+Gli stessi admin ricevono avvisi su Telegram quando serve l'intervento di una
+persona: un circuit breaker scattato, una pulizia fallita, l'API Mensa non in
+salute, una rimozione a cui il bot ha rinunciato, oppure il bot rimosso da un
+gruppo o privato dei diritti di admin. Vedi
 [`DEPLOY.md`](DEPLOY.md#admin-alerts).
 
-## Configuration
+## Configurazione
 
-All configuration is via environment variables. See
-[`mensa-bot-refactor/ENVIRONMENT.md`](mensa-bot-refactor/ENVIRONMENT.md) for the
-exhaustive list and [`mensa-bot-refactor/.env.example`](mensa-bot-refactor/.env.example)
-for a template to copy. The essentials:
+Tutta la configurazione passa da variabili d'ambiente. Vedi
+[`mensa-bot-refactor/ENVIRONMENT.md`](mensa-bot-refactor/ENVIRONMENT.md) per
+l'elenco completo e [`mensa-bot-refactor/.env.example`](mensa-bot-refactor/.env.example)
+per un modello da copiare. L'essenziale:
 
-| Variable             | Required | Description                                            |
-| -------------------- | -------- | ------------------------------------------------------ |
-| `BOT_TOKEN`          | yes      | Telegram bot token from [@BotFather](https://t.me/BotFather). |
-| `API_ENDPOINT`       | yes      | Base URL of the Mensa Italia membership API.           |
-| `API_BEARER_TOKEN`   | yes      | Bearer token for that API.                             |
-| `CALLME_BASE_URL`    | yes      | Public origin of this service + `/callme_api`.         |
-| `ADMIN_TELEGRAM_IDS` | no       | Comma-separated Telegram IDs flagged as bot admins.    |
-| `DATABASE_URL`       | yes*     | Postgres DSN. *Or the discrete `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` form. |
-| `HTTP_ADDR`          | no       | Bind address (default `:8080`).                        |
+| Variabile            | Obbligatoria | Descrizione                                            |
+| -------------------- | ------------ | ------------------------------------------------------ |
+| `BOT_TOKEN`          | sì           | Token del bot Telegram da [@BotFather](https://t.me/BotFather). |
+| `API_ENDPOINT`       | sì           | URL base dell'API soci di Mensa Italia.                |
+| `API_BEARER_TOKEN`   | sì           | Bearer token per quell'API.                            |
+| `CALLME_BASE_URL`    | sì           | Origine pubblica di questo servizio + `/callme_api`.   |
+| `ADMIN_TELEGRAM_IDS` | no           | ID Telegram separati da virgola, segnati come admin del bot. |
+| `DATABASE_URL`       | sì*          | DSN Postgres. *Oppure la forma separata `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`. |
+| `HTTP_ADDR`          | no           | Indirizzo di ascolto (predefinito `:8080`).            |
 
-## Running
+## Avvio
 
-### Docker Compose (recommended)
+### Docker Compose (consigliato)
 
-1. Copy the env template and fill in the required values:
+1. Copia il modello delle variabili d'ambiente e compila i valori obbligatori:
 
    ```sh
    cp mensa-bot-refactor/.env.example mensa-bot-refactor/.env
    $EDITOR mensa-bot-refactor/.env
    ```
 
-2. Build and start the single service:
+2. Compila e avvia il servizio:
 
    ```sh
    docker compose up -d --build
    ```
 
-Postgres data lives on the named `mensa-pgdata` volume, so it survives container
-replacement. The bot has no volume — it is stateless. The `mensa-bot` service
-publishes port `8080`; point your reverse proxy at it and forward `/callme_api/…`.
+I dati di Postgres stanno nel volume con nome `mensa-pgdata`, quindi sopravvivono
+alla sostituzione del container. Il bot non ha volumi: è stateless. Il servizio
+`mensa-bot` pubblica la porta `8080`: puntaci il reverse proxy e inoltra
+`/callme_api/…`.
 
-For **Docker Swarm / Portainer**, use [`docker-stack.yml`](docker-stack.yml) and read
-[`DEPLOY.md`](DEPLOY.md) first — `docker stack deploy` ignores `build:`, so it needs
-a published image, and the data pins the stack to one labelled node.
+Per **Docker Swarm / Portainer** usa [`docker-stack.yml`](docker-stack.yml) e leggi
+prima [`DEPLOY.md`](DEPLOY.md): `docker stack deploy` ignora `build:`, quindi serve
+un'immagine pubblicata, e i dati legano lo stack a un nodo etichettato.
 
-### Locally (development)
+### In locale (sviluppo)
 
-Requires Go 1.25+ and a reachable Postgres. No C toolchain is needed any more —
-the build is `CGO_ENABLED=0` and fully static.
+Servono Go 1.26.5+ e un Postgres raggiungibile. Non serve più un toolchain C: la
+build è `CGO_ENABLED=0` e completamente statica.
 
 ```sh
-docker compose up -d postgres        # or point DATABASE_URL at your own
+docker compose up -d postgres        # oppure punta DATABASE_URL al tuo
 cd mensa-bot-refactor
-cp .env.example .env                 # then fill it in
+cp .env.example .env                 # poi compilalo
 go run .
 ```
 
-The test suite starts its own throwaway Postgres via testcontainers, so it needs a
-running Docker daemon; it skips rather than fails without one.
+La suite di test avvia un suo Postgres usa e getta tramite testcontainers, quindi
+richiede un demone Docker attivo; senza, i test vengono saltati invece di fallire.
 
 ```sh
 go test ./...
 ```
 
-## Translations
+## Traduzioni
 
-Translation keys are documented in
-[`mensa-bot-refactor/TOLGEE_KEYS.md`](mensa-bot-refactor/TOLGEE_KEYS.md), which
-marks the keys that are new in this refactor and must exist in the Tolgee project
-(in it / en / es / de) — the bot renders a raw dotted key for anything missing.
+Le chiavi di traduzione sono documentate in
+[`mensa-bot-refactor/TOLGEE_KEYS.md`](mensa-bot-refactor/TOLGEE_KEYS.md), che
+indica le chiavi nuove di questo refactor e che devono esistere nel progetto Tolgee
+(in it / en / es / de): per qualsiasi chiave mancante il bot mostra la chiave grezza
+con i punti.
+
+## Licenza
+
+Rilasciato con licenza [GNU Affero General Public License v3.0](LICENSE). Se
+distribuisci una versione modificata, o la fai girare come servizio accessibile in
+rete, devi rendere disponibile il relativo codice sorgente con la stessa licenza.
