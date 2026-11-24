@@ -25,6 +25,9 @@ lavorare su qualcosa che poi non viene accettato.
 - Chi non è maintainer contribuisce **da una fork**: fai la fork del repository,
   lavora su un branch della tua fork e apri una PR verso `main`.
 - Una PR viene unita solo con la **CI verde** e **l'approvazione di un maintainer**.
+  La review viene richiesta in automatico a
+  [@Bombaclath97](https://github.com/Bombaclath97) (vedi
+  [`.github/CODEOWNERS`](.github/CODEOWNERS)).
 - Per i contributori esterni la CI parte solo dopo l'approvazione di un maintainer.
   Se la tua PR resta in attesa, non è un errore.
 

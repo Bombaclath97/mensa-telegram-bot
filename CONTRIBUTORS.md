@@ -16,7 +16,7 @@ Tutti i dettagli sono in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Maintainer
 
-- Emanuele Bombardelli: maintainer principale. GitHub
+- Emanuele Bombardelli: maintainer principale e reviewer di tutte le PR. GitHub
   [@Bombaclath97](https://github.com/Bombaclath97), Telegram
   [@Bombaclath97](https://t.me/Bombaclath97)
 
