@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

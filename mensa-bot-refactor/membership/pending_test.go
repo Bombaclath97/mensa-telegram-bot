@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
-	"github.com/Bombaclath97/mensa-telegram-bot/internal/testtg"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/internal/testtg"
 )
 
 func setupPending(t *testing.T) {

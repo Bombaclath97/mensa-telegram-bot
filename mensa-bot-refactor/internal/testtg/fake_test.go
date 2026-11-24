@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
-	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
+	tb "github.com/Mensa-Italia/mensa-telegram-bot/telegram_bot"
 )
 
 // The fake is only useful if the real client parses its answers the way it parses Telegram's.

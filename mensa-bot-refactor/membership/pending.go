@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/alert"
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
-	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
+	"github.com/Mensa-Italia/mensa-telegram-bot/alert"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
+	"github.com/Mensa-Italia/mensa-telegram-bot/tolgee"
 )
 
 // MaxPendingAttempts is how many background retries a pending removal gets. After that it

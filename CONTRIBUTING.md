@@ -38,7 +38,7 @@ lavorare su qualcosa che poi non viene accettato.
    ```sh
    git clone git@github.com:<tuo-utente>/mensa-telegram-bot.git
    cd mensa-telegram-bot
-   git remote add upstream https://github.com/Bombaclath97/mensa-telegram-bot.git
+   git remote add upstream https://github.com/Mensa-Italia/mensa-telegram-bot.git
    ```
 
 2. Parti sempre da un `main` aggiornato e crea un branch con un nome parlante:
@@ -51,7 +51,7 @@ lavorare su qualcosa che poi non viene accettato.
    Prefissi consigliati: `feat/`, `fix/`, `docs/`, `test/`, `refactor/`, `chore/`.
 
 3. Fai le modifiche, esegui i controlli (vedi sotto) e fai commit.
-4. Fai push sulla tua fork e apri una PR verso `Bombaclath97/mensa-telegram-bot:main`.
+4. Fai push sulla tua fork e apri una PR verso `Mensa-Italia/mensa-telegram-bot:main`.
 5. Rispondi alle review: i commit aggiuntivi sullo stesso branch aggiornano la PR.
 
 Per modifiche grosse o che cambiano il comportamento del bot verso i soci, parlane
@@ -111,7 +111,7 @@ Nei test e negli esempi usa solo dati inventati.
 ## Segnalare una vulnerabilità
 
 Non aprire una issue pubblica per problemi di sicurezza. Usa
-[Private vulnerability reporting](https://github.com/Bombaclath97/mensa-telegram-bot/security/advisories/new)
+[Private vulnerability reporting](https://github.com/Mensa-Italia/mensa-telegram-bot/security/advisories/new)
 di GitHub.
 
 ## Licenza

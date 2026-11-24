@@ -22,7 +22,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
+	tb "github.com/Mensa-Italia/mensa-telegram-bot/telegram_bot"
 )
 
 // Outcome is what happened to one member in one group.

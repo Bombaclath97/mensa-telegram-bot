@@ -3,10 +3,10 @@ package handlers
 import (
 	"context"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
-	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
-	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
+	tb "github.com/Mensa-Italia/mensa-telegram-bot/telegram_bot"
+	"github.com/Mensa-Italia/mensa-telegram-bot/tolgee"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )

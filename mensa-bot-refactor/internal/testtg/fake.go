@@ -21,7 +21,7 @@ import (
 
 	"github.com/go-telegram/bot"
 
-	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
+	tb "github.com/Mensa-Italia/mensa-telegram-bot/telegram_bot"
 )
 
 // Call is one recorded Bot API request.

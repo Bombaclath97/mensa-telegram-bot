@@ -18,7 +18,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
 )
 
 // DefaultAddr is the bind address used when HTTP_ADDR is unset.

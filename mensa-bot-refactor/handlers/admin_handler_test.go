@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/cleanup"
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/cleanup"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
 )
 
 func TestFormatSweepPreview(t *testing.T) {

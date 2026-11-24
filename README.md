@@ -13,7 +13,7 @@ Vuoi contribuire? Leggi [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Architettura
 
-È un **unico servizio Go** (modulo `github.com/Bombaclath97/mensa-telegram-bot`,
+È un **unico servizio Go** (modulo `github.com/Mensa-Italia/mensa-telegram-bot`,
 un solo binario). Sostituisce il vecchio deployment in tre parti (`mensa-bot` +
 `mensa-telegram-crud` + `mensa-shared-models`), ormai dismesso.
 

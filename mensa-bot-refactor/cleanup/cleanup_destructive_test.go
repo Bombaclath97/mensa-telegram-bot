@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
-	"github.com/Bombaclath97/mensa-telegram-bot/internal/testtg"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/internal/testtg"
 )
 
 // These tests cover the part of the sweep that acts on Telegram: kick, demote-then-kick, the
