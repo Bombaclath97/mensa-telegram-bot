@@ -3,6 +3,21 @@
 Grazie per l'interesse! Ogni contributo è benvenuto: bug report, idee, traduzioni,
 documentazione e codice.
 
+## Prima di tutto: parliamone su Telegram
+
+Il modo preferito per proporre un'idea, chiedere chiarimenti o discutere una PR è
+scrivere su Telegram al maintainer principale,
+[@Bombaclath97](https://t.me/Bombaclath97). Una chiacchierata di due minuti evita di
+lavorare su qualcosa che poi non viene accettato.
+
+## Come devono essere le PR
+
+- **Brevi.** Una PR fa una cosa sola. Se stai facendo due cose, apri due PR.
+- **Comprensibili in poche parole.** Titolo e descrizione devono spiegare in una o
+  due frasi cosa cambia e perché. Se non ci riesci, la PR è troppo grande: spezzala.
+- **Conventional Commits** per titolo della PR e messaggi di commit (vedi
+  [Stile](#stile)), così la cronologia si legge a colpo d'occhio.
+
 ## Regole del repository
 
 - Il branch `main` è protetto: **nessuno fa push diretti**. Ogni modifica entra
@@ -36,9 +51,8 @@ documentazione e codice.
 4. Fai push sulla tua fork e apri una PR verso `Bombaclath97/mensa-telegram-bot:main`.
 5. Rispondi alle review: i commit aggiuntivi sullo stesso branch aggiornano la PR.
 
-Per modifiche grosse o che cambiano il comportamento del bot verso i soci, **apri
-prima una issue** per discuterne: eviti di lavorare su qualcosa che poi non viene
-accettato.
+Per modifiche grosse o che cambiano il comportamento del bot verso i soci, parlane
+prima su Telegram con [@Bombaclath97](https://t.me/Bombaclath97) (o apri una issue).
 
 ## Ambiente di sviluppo
 
@@ -70,9 +84,11 @@ Se tocchi `mtproto-roster/` o `mock-mensa-api/`, esegui `go build ./...` e
 
 ## Stile
 
-- **Commit** in stile [Conventional Commits](https://www.conventionalcommits.org/):
-  `feat: ...`, `fix: ...`, `docs: ...`, `test: ...`, `refactor: ...`, `chore: ...`.
-  Il messaggio spiega *perché*, non solo *cosa*.
+- **Commit e titoli delle PR** in stile
+  [Conventional Commits](https://www.conventionalcommits.org/): `feat: ...`,
+  `fix: ...`, `docs: ...`, `test: ...`, `refactor: ...`, `chore: ...`. Il messaggio
+  spiega *perché*, non solo *cosa*. Esempio: `fix: non espellere chi ha rinnovato
+  la tessera durante la pulizia`.
 - Codice formattato con `gofmt`. I commenti spiegano le decisioni non ovvie.
 - Nuovi comportamenti vanno coperti da test, specialmente quelli che rimuovono soci
   dai gruppi o cancellano dati.
