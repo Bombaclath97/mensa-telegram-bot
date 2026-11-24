@@ -3,8 +3,8 @@ package handlers
 import (
 	"strings"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/model"
-	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
+	"github.com/Mensa-Italia/mensa-telegram-bot/model"
+	"github.com/Mensa-Italia/mensa-telegram-bot/tolgee"
 	"github.com/go-telegram/bot/models"
 )
 

@@ -11,9 +11,9 @@ package alert
 import (
 	"context"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
-	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
+	tb "github.com/Mensa-Italia/mensa-telegram-bot/telegram_bot"
 )
 
 // recipients is a variable so tests can supply their own admins.

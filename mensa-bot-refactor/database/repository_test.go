@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/internal/testdb"
+	"github.com/Mensa-Italia/mensa-telegram-bot/internal/testdb"
 )
 
 // TestMain runs the whole package against a real, throwaway PostgreSQL container — the same

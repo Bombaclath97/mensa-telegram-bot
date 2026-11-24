@@ -8,9 +8,9 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
-	"github.com/Bombaclath97/mensa-telegram-bot/internal/testtg"
-	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/internal/testtg"
+	tb "github.com/Mensa-Italia/mensa-telegram-bot/telegram_bot"
 )
 
 const alertAdmin int64 = 990100

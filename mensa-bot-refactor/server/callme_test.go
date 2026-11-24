@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
-	"github.com/Bombaclath97/mensa-telegram-bot/internal/testdb"
-	"github.com/Bombaclath97/mensa-telegram-bot/model"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/internal/testdb"
+	"github.com/Mensa-Italia/mensa-telegram-bot/model"
 )
 
 // TestMain gives the callme handler a real DB: it resolves the user's language via

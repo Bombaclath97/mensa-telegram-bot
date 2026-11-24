@@ -1,4 +1,4 @@
-module github.com/Bombaclath97/mtproto-roster
+module github.com/Mensa-Italia/mtproto-roster
 
 go 1.26.5
 

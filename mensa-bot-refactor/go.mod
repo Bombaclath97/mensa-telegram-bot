@@ -1,4 +1,4 @@
-module github.com/Bombaclath97/mensa-telegram-bot
+module github.com/Mensa-Italia/mensa-telegram-bot
 
 go 1.26.5
 

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
 )
 
 // Field represents the current active field being filled in the profile draft.

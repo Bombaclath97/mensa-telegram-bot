@@ -56,13 +56,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/alert"
-	"github.com/Bombaclath97/mensa-telegram-bot/api"
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
-	"github.com/Bombaclath97/mensa-telegram-bot/membership"
-	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
-	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
+	"github.com/Mensa-Italia/mensa-telegram-bot/alert"
+	"github.com/Mensa-Italia/mensa-telegram-bot/api"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
+	"github.com/Mensa-Italia/mensa-telegram-bot/membership"
+	tb "github.com/Mensa-Italia/mensa-telegram-bot/telegram_bot"
+	"github.com/Mensa-Italia/mensa-telegram-bot/tolgee"
 
 	"github.com/go-telegram/bot/models"
 )

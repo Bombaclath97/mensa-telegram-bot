@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
 )
 
 func TestSweepAlert(t *testing.T) {

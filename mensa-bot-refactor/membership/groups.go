@@ -6,11 +6,11 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/alert"
-	"github.com/Bombaclath97/mensa-telegram-bot/database"
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
-	tb "github.com/Bombaclath97/mensa-telegram-bot/telegram_bot"
-	"github.com/Bombaclath97/mensa-telegram-bot/tolgee"
+	"github.com/Mensa-Italia/mensa-telegram-bot/alert"
+	"github.com/Mensa-Italia/mensa-telegram-bot/database"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
+	tb "github.com/Mensa-Italia/mensa-telegram-bot/telegram_bot"
+	"github.com/Mensa-Italia/mensa-telegram-bot/tolgee"
 )
 
 // RecordBotGone marks a group as left when cause says the bot can no longer see it, and

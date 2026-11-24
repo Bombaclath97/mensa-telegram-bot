@@ -25,7 +25,7 @@ import (
 
 	"github.com/go-resty/resty/v2"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
 )
 
 // Language represents a language configuration from Tolgee.

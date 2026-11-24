@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/logger"
+	"github.com/Mensa-Italia/mensa-telegram-bot/logger"
 )
 
 // DefaultTimeout bounds every call to the Mensa Italia API.

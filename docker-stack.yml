@@ -19,7 +19,7 @@ services:
   # constraint: Swarm may schedule it on any node.
   # -------------------------------------------------------------------------------------
   mensa-bot:
-    image: ${MENSA_BOT_IMAGE:-ghcr.io/bombaclath97/mensa-telegram-bot:latest}
+    image: ${MENSA_BOT_IMAGE:-ghcr.io/mensa-italia/mensa-telegram-bot:latest}
 
     environment:
       # Discrete DB_* form, NOT DATABASE_URL, so the bot and postgres can share ONE password

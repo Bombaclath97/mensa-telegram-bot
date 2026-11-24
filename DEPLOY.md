@@ -52,14 +52,14 @@ Notes for the UI route specifically:
 ### 1. An image in GHCR
 
 `docker stack deploy` **ignores `build:`**. Swarm can pull an image; it cannot build one.
-`.github/workflows/ci.yml` publishes to `ghcr.io/bombaclath97/mensa-telegram-bot` on every
+`.github/workflows/ci.yml` publishes to `ghcr.io/mensa-italia/mensa-telegram-bot` on every
 push to `main` and every `v*` tag.
 
 The package is currently **public**, so no registry credentials are needed — Portainer and
 Swarm can both pull it anonymously. Verify any time with:
 
 ```sh
-docker manifest inspect ghcr.io/bombaclath97/mensa-telegram-bot:latest
+docker manifest inspect ghcr.io/mensa-italia/mensa-telegram-bot:latest
 ```
 
 If it is ever made private, add a registry credential to the swarm instead:
@@ -72,7 +72,7 @@ docker stack deploy -c docker-stack.yml --with-registry-auth mensa
 Pin to a `sha-` tag rather than `latest` if you want a redeploy to be reproducible:
 
 ```sh
-export MENSA_BOT_IMAGE=ghcr.io/bombaclath97/mensa-telegram-bot:sha-<commit>
+export MENSA_BOT_IMAGE=ghcr.io/mensa-italia/mensa-telegram-bot:sha-<commit>
 ```
 
 ### 2. Label the node that holds the data

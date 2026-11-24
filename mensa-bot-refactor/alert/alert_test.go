@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Bombaclath97/mensa-telegram-bot/internal/testtg"
+	"github.com/Mensa-Italia/mensa-telegram-bot/internal/testtg"
 )
 
 func TestAdminsDeliversToEveryAdminAndSurvivesFailures(t *testing.T) {
